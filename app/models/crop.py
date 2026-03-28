@@ -20,7 +20,11 @@ class Crop(BaseModel):
     risk: float
     maintenance: float
     area_need: float
+    nutrient_density: float
+    oxygen_contribution: float
+    co2_utilization: float
+    waste_recycling_synergy: float
+    crew_acceptance: float
     compatible_systems: list[str]
     preferred_environments: list[Environment]
     notes: str
-

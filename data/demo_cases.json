@@ -1,0 +1,35 @@
+[
+  {
+    "name": "Mars Water Crisis",
+    "environment": "mars",
+    "duration": "long",
+    "constraints": {
+      "water": "low",
+      "energy": "medium",
+      "area": "medium"
+    },
+    "goal": "water_efficiency"
+  },
+  {
+    "name": "ISS Low Maintenance Mission",
+    "environment": "iss",
+    "duration": "medium",
+    "constraints": {
+      "water": "medium",
+      "energy": "medium",
+      "area": "low"
+    },
+    "goal": "low_maintenance"
+  },
+  {
+    "name": "Moon Long Duration Calorie Mission",
+    "environment": "moon",
+    "duration": "long",
+    "constraints": {
+      "water": "medium",
+      "energy": "medium",
+      "area": "medium"
+    },
+    "goal": "calorie_max"
+  }
+]

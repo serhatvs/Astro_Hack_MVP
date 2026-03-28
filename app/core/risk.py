@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from app.core.scoring import ScoredCrop
-from app.models.mission import ConstraintLevel, Duration, MissionProfile
+from app.models.mission import ConstraintLevel, Duration, Environment, MissionProfile
 from app.models.response import RiskAnalysis, RiskLevel
 from app.models.system import GrowingSystem
 
@@ -24,11 +24,11 @@ def evaluate_risk(
     """Estimate overall mission-agriculture risk from simple heuristics."""
 
     factors: list[str] = []
-    points = 0
+    points = 0.0
     lead_crop = ranked_crops[0].crop if ranked_crops else None
 
     if mission.constraints.water is ConstraintLevel.LOW and selected_system.complexity >= 70:
-        points += 1
+        points += 1.0
         factors.append("water scarcity paired with system complexity")
 
     if (
@@ -36,22 +36,42 @@ def evaluate_risk(
         and lead_crop is not None
         and lead_crop.growth_time >= 70
     ):
-        points += 1
+        points += 1.0
         factors.append("long mission depends on a slower lead crop")
 
     if _has_tight_resources(mission) and any(item.crop.maintenance >= 65 for item in ranked_crops):
-        points += 1
+        points += 1.0
         factors.append("high-maintenance crops under constrained resources")
 
     if mission.constraints.area is ConstraintLevel.LOW and any(
         item.crop.area_need >= 55 for item in ranked_crops
     ):
-        points += 1
+        points += 1.0
         factors.append("limited area with large-footprint crop options")
 
-    if points >= 4:
+    if mission.environment is Environment.MARS and (
+        selected_system.complexity >= 50 or any(item.crop.risk >= 45 for item in ranked_crops[:2])
+    ):
+        points += 0.75
+        factors.append("Mars missions demand stronger robustness margins")
+
+    if mission.environment is Environment.MOON and any(
+        item.crop.water_need >= 60 for item in ranked_crops[:2]
+    ):
+        points += 0.75
+        factors.append("Moon missions amplify water recovery pressure")
+
+    if mission.environment is Environment.ISS and (
+        selected_system.maintenance >= 45 or any(item.crop.maintenance >= 45 for item in ranked_crops[:2])
+    ):
+        points += 0.75
+        factors.append("ISS operations prefer lower-maintenance crop cycles")
+
+    score = round(min(points / 5.0, 1.0), 3)
+
+    if points >= 3.5:
         level = RiskLevel.HIGH
-    elif points >= 2:
+    elif points >= 1.75:
         level = RiskLevel.MODERATE
     else:
         level = RiskLevel.LOW
@@ -59,4 +79,4 @@ def evaluate_risk(
     if not factors:
         factors.append("no major mission stressors detected")
 
-    return RiskAnalysis(level=level, factors=factors[:3])
+    return RiskAnalysis(level=level, score=score, factors=factors[:3])

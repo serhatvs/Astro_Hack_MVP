@@ -9,7 +9,7 @@ from app.core.filters import compute_rule_adjustment, filter_compatible_crops
 from app.core.normalization import build_metric_ranges, normalize_record, normalize_scores
 from app.core.weights import derive_crop_weights, derive_system_weights
 from app.models.crop import Crop
-from app.models.mission import ConstraintLevel, Goal, MissionProfile
+from app.models.mission import ConstraintLevel, Environment, Goal, MissionProfile
 from app.models.system import GrowingSystem
 
 
@@ -80,6 +80,18 @@ def score_systems(systems: list[GrowingSystem], mission: MissionProfile) -> list
             raw_score += 0.04
             modifiers.append("low-maintenance-bonus")
 
+        if mission.environment is Environment.MARS and system.name == "hybrid":
+            raw_score += 0.07
+            modifiers.append("mars-resilience-bonus")
+
+        if mission.environment is Environment.MOON and system.name == "aeroponic":
+            raw_score += 0.06
+            modifiers.append("moon-water-bonus")
+
+        if mission.environment is Environment.ISS and system.name == "hydroponic":
+            raw_score += 0.08
+            modifiers.append("iss-simplicity-bonus")
+
         results.append(
             ScoredSystem(
                 system=system,
@@ -106,9 +118,6 @@ def score_crops(
 
     ranges = build_metric_ranges(crops, CROP_METRICS)
     eligible_crops = filter_compatible_crops(crops, selected_system)
-    if len(eligible_crops) < 3:
-        eligible_crops = list(crops)
-
     weights = derive_crop_weights(mission, manual_adjustments=weight_adjustments)
     results: list[ScoredCrop] = []
 
@@ -125,8 +134,40 @@ def score_crops(
         adjustment, notes = compute_rule_adjustment(crop, mission)
         raw_score += adjustment
 
-        if temporary_penalties and crop.name in temporary_penalties:
-            raw_score -= temporary_penalties[crop.name]
+        if mission.goal is Goal.CALORIE_MAX and crop.calorie_yield >= 80:
+            raw_score += 0.18
+            notes.append("calorie-priority-bonus")
+        elif mission.goal is Goal.WATER_EFFICIENCY and crop.water_need <= 35:
+            raw_score += 0.06
+            notes.append("water-priority-bonus")
+        elif mission.goal is Goal.LOW_MAINTENANCE and crop.maintenance <= 35:
+            raw_score += 0.06
+            notes.append("maintenance-priority-bonus")
+
+        if mission.environment is Environment.MARS:
+            if crop.calorie_yield >= 75:
+                raw_score += 0.05
+                notes.append("mars-calorie-bonus")
+            if crop.risk <= 40:
+                raw_score += 0.03
+                notes.append("mars-robustness-bonus")
+        elif mission.environment is Environment.MOON:
+            if crop.water_need <= 35:
+                raw_score += 0.05
+                notes.append("moon-water-bonus")
+            if crop.waste_recycling_synergy >= 70:
+                raw_score += 0.03
+                notes.append("moon-recycling-bonus")
+        elif mission.environment is Environment.ISS:
+            if crop.maintenance <= 35:
+                raw_score += 0.05
+                notes.append("iss-maintenance-bonus")
+            if crop.risk <= 30:
+                raw_score += 0.03
+                notes.append("iss-stability-bonus")
+
+        if temporary_penalties and crop.name.lower() in temporary_penalties:
+            raw_score -= temporary_penalties[crop.name.lower()]
             notes.append("temporary-yield-penalty")
 
         results.append(
@@ -143,4 +184,3 @@ def score_crops(
         item.score = normalized_score
 
     return sorted(results, key=lambda item: item.score, reverse=True)
-

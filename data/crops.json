@@ -8,6 +8,11 @@
     "risk": 40,
     "maintenance": 45,
     "area_need": 70,
+    "nutrient_density": 74,
+    "oxygen_contribution": 66,
+    "co2_utilization": 68,
+    "waste_recycling_synergy": 70,
+    "crew_acceptance": 88,
     "compatible_systems": ["hydroponic", "aeroponic", "hybrid"],
     "preferred_environments": ["mars", "moon"],
     "notes": "Reliable staple crop with strong calorie density for long-duration missions."
@@ -21,6 +26,11 @@
     "risk": 46,
     "maintenance": 50,
     "area_need": 65,
+    "nutrient_density": 68,
+    "oxygen_contribution": 70,
+    "co2_utilization": 74,
+    "waste_recycling_synergy": 72,
+    "crew_acceptance": 72,
     "compatible_systems": ["hydroponic", "hybrid"],
     "preferred_environments": ["mars", "moon"],
     "notes": "Stable grain option with good calorie return, but slower growth and moderate footprint."
@@ -34,6 +44,11 @@
     "risk": 20,
     "maintenance": 25,
     "area_need": 30,
+    "nutrient_density": 48,
+    "oxygen_contribution": 72,
+    "co2_utilization": 63,
+    "waste_recycling_synergy": 58,
+    "crew_acceptance": 76,
     "compatible_systems": ["hydroponic", "aeroponic", "hybrid"],
     "preferred_environments": ["iss", "moon"],
     "notes": "Fast, low-risk leafy green with modest resource needs and rapid harvest cycles."
@@ -47,6 +62,11 @@
     "risk": 24,
     "maintenance": 32,
     "area_need": 35,
+    "nutrient_density": 86,
+    "oxygen_contribution": 76,
+    "co2_utilization": 68,
+    "waste_recycling_synergy": 64,
+    "crew_acceptance": 70,
     "compatible_systems": ["hydroponic", "aeroponic", "hybrid"],
     "preferred_environments": ["iss", "mars"],
     "notes": "Compact leafy crop with solid nutrient density and manageable maintenance."
@@ -60,6 +80,11 @@
     "risk": 65,
     "maintenance": 72,
     "area_need": 48,
+    "nutrient_density": 56,
+    "oxygen_contribution": 64,
+    "co2_utilization": 58,
+    "waste_recycling_synergy": 46,
+    "crew_acceptance": 92,
     "compatible_systems": ["hydroponic", "aeroponic", "hybrid"],
     "preferred_environments": ["iss"],
     "notes": "Useful morale crop, but more fragile and maintenance-intensive than staple options."
@@ -73,9 +98,13 @@
     "risk": 55,
     "maintenance": 60,
     "area_need": 12,
+    "nutrient_density": 94,
+    "oxygen_contribution": 84,
+    "co2_utilization": 90,
+    "waste_recycling_synergy": 88,
+    "crew_acceptance": 54,
     "compatible_systems": ["aeroponic", "hybrid"],
     "preferred_environments": ["mars", "moon", "iss"],
     "notes": "Compact, fast biomass producer with strong water efficiency, but higher operational complexity."
   }
 ]
-

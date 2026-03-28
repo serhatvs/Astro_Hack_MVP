@@ -15,6 +15,19 @@ class RiskLevel(StrEnum):
     HIGH = "high"
 
 
+class MetricBreakdown(BaseModel):
+    """Normalized crop metric view for UI presentation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    calorie: float
+    water: float
+    energy: float
+    growth_time: float
+    risk: float
+    maintenance: float
+
+
 class CropRecommendation(BaseModel):
     """Single ranked crop recommendation."""
 
@@ -24,6 +37,10 @@ class CropRecommendation(BaseModel):
     score: float
     reason: str
     selected_system: str
+    strengths: list[str] = Field(default_factory=list)
+    tradeoffs: list[str] = Field(default_factory=list)
+    metric_breakdown: MetricBreakdown
+    compatibility_score: float
 
 
 class ResourcePlan(BaseModel):
@@ -34,6 +51,11 @@ class ResourcePlan(BaseModel):
     water_level: str
     energy_level: str
     area_usage: str
+    water_score: float
+    energy_score: float
+    area_score: float
+    maintenance_score: float
+    calorie_score: float
 
 
 class RiskAnalysis(BaseModel):
@@ -42,6 +64,7 @@ class RiskAnalysis(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     level: RiskLevel
+    score: float
     factors: list[str] = Field(default_factory=list)
 
 
@@ -53,9 +76,16 @@ class RecommendationResponse(BaseModel):
     mission_profile: MissionProfile
     top_crops: list[CropRecommendation]
     recommended_system: str
+    system_reason: str
     resource_plan: ResourcePlan
     risk_analysis: RiskAnalysis
     explanation: str
+
+
+class RiskDelta(StrEnum):
+    INCREASED = "increased"
+    DECREASED = "decreased"
+    UNCHANGED = "unchanged"
 
 
 class SimulationRequest(BaseModel):
@@ -75,8 +105,17 @@ class SimulationResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     change_event: ChangeEvent
+    changed_fields: list[str] = Field(default_factory=list)
+    previous_top_crop: str | None = None
+    new_top_crop: str | None = None
+    ranking_diff: dict[str, int] = Field(default_factory=dict)
+    system_changed: bool
+    previous_system: str | None = None
+    new_system: str | None = None
+    risk_delta: RiskDelta
     updated_mission_profile: MissionProfile
     updated_recommendation: RecommendationResponse
+    reason: str
     adaptation_reason: str
 
 
@@ -87,4 +126,3 @@ class HealthResponse(BaseModel):
 
     status: str
     service: str
-

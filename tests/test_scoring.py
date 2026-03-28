@@ -8,6 +8,7 @@ from app.models.mission import (
     MissionProfile,
 )
 from app.services.data_provider import JSONDataProvider
+from app.services.recommender import RecommendationEngine
 
 
 def test_scoring_produces_valid_normalized_ranking() -> None:
@@ -36,3 +37,33 @@ def test_scoring_produces_valid_normalized_ranking() -> None:
     ranked_names = [item.crop.name for item in ranked_crops]
     assert ranked_names.index("spirulina") < ranked_names.index("potato")
 
+
+def test_environment_influence_changes_recommendation_behavior() -> None:
+    engine = RecommendationEngine(provider=JSONDataProvider())
+    mars = engine.recommend(
+        MissionProfile(
+            environment=Environment.MARS,
+            duration=Duration.MEDIUM,
+            constraints=MissionConstraints(
+                water=ConstraintLevel.MEDIUM,
+                energy=ConstraintLevel.MEDIUM,
+                area=ConstraintLevel.MEDIUM,
+            ),
+            goal=Goal.BALANCED,
+        )
+    )
+    iss = engine.recommend(
+        MissionProfile(
+            environment=Environment.ISS,
+            duration=Duration.MEDIUM,
+            constraints=MissionConstraints(
+                water=ConstraintLevel.MEDIUM,
+                energy=ConstraintLevel.MEDIUM,
+                area=ConstraintLevel.MEDIUM,
+            ),
+            goal=Goal.BALANCED,
+        )
+    )
+
+    assert mars.recommended_system != iss.recommended_system
+    assert mars.top_crops[0].name != iss.top_crops[0].name

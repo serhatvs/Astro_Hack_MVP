@@ -16,6 +16,11 @@ class ResourcePlanner:
                 water_level="medium",
                 energy_level="moderate",
                 area_usage="medium",
+                water_score=0.5,
+                energy_score=0.5,
+                area_score=0.5,
+                maintenance_score=0.5,
+                calorie_score=0.5,
             )
 
         weights = [max(item.score, 0.1) for item in ranked_crops]
@@ -24,6 +29,8 @@ class ResourcePlanner:
         weighted_water = sum(item.crop.water_need * weight for item, weight in zip(ranked_crops, weights)) / total_weight
         weighted_energy = sum(item.crop.energy_need * weight for item, weight in zip(ranked_crops, weights)) / total_weight
         weighted_area = sum(item.crop.area_need * weight for item, weight in zip(ranked_crops, weights)) / total_weight
+        weighted_maintenance = sum(item.crop.maintenance * weight for item, weight in zip(ranked_crops, weights)) / total_weight
+        weighted_calorie = sum(item.crop.calorie_yield * weight for item, weight in zip(ranked_crops, weights)) / total_weight
 
         effective_water = max(0.0, weighted_water - (selected_system.water_efficiency * 0.35))
         effective_energy = (weighted_energy * 0.60) + (selected_system.energy_cost * 0.40)
@@ -55,5 +62,9 @@ class ResourcePlanner:
             water_level=water_level,
             energy_level=energy_level,
             area_usage=area_usage,
+            water_score=round(min(effective_water / 100, 1.0), 3),
+            energy_score=round(min(effective_energy / 100, 1.0), 3),
+            area_score=round(min(weighted_area / 100, 1.0), 3),
+            maintenance_score=round(min(weighted_maintenance / 100, 1.0), 3),
+            calorie_score=round(min(weighted_calorie / 100, 1.0), 3),
         )
-
