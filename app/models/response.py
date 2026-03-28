@@ -126,3 +126,43 @@ class HealthResponse(BaseModel):
 
     status: str
     service: str
+
+
+class AICropRecommendation(BaseModel):
+    """Top crop recommendation with AI reasoning from LLM."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    name: str
+    reasoning_for_crop: str
+
+
+class OptimizeAgricultureStatus(StrEnum):
+    NOMINAL = "NOMINAL"
+    CRITICAL = "CRITICAL"
+
+
+class OptimizeAgricultureResponse(BaseModel):
+    """AI-driven agriculture optimization response with LLM reasoning."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    top_crops: list[AICropRecommendation] = Field(
+        description="Top 3 AI-selected crops with reasoning from LLM"
+    )
+    selected_system: str = Field(
+        description="Selected growing system (e.g., 'aeroponic', 'hydroponic', 'hybrid')"
+    )
+    system_reasoning: str = Field(
+        description="LLM reasoning for system selection"
+    )
+    executive_summary: str = Field(
+        description="Executive report with historical space crisis references"
+    )
+    status: OptimizeAgricultureStatus = Field(
+        description="Mission status: NOMINAL or CRITICAL"
+    )
+    reasoning: str = Field(
+        description="Overall reasoning of the AI decision"
+    )

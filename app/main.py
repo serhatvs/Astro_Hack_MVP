@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.routes.demo_cases import router as demo_cases_router
 from app.routes.health import router as health_router
+from app.routes.optimize import router as optimize_router
 from app.routes.recommend import router as recommend_router
 from app.routes.simulate import router as simulate_router
 
@@ -38,6 +39,7 @@ def create_app() -> FastAPI:
     )
     application.include_router(demo_cases_router)
     application.include_router(health_router)
+    application.include_router(optimize_router)
     application.include_router(recommend_router)
     application.include_router(simulate_router)
     return application
