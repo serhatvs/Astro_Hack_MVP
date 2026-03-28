@@ -6,6 +6,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.mission_state import MissionResources, MissionState
 
+SIMULATION_STEP_WEEKS = 1
+SIMULATION_MAX_WEEKS = 12
+
 
 class MissionEvents(BaseModel):
     """Optional environmental events applied during a mission step."""
@@ -19,12 +22,12 @@ class MissionEvents(BaseModel):
 
 
 class MissionStepRequest(BaseModel):
-    """Stateful mission-step request."""
+    """Stateful weekly mission-step request."""
 
     model_config = ConfigDict(extra="forbid")
 
     mission_id: str
-    time_step: int = Field(default=1, gt=0, le=365)
+    time_step: int = Field(default=SIMULATION_STEP_WEEKS, gt=0, le=SIMULATION_MAX_WEEKS)
     events: MissionEvents | None = None
 
 
@@ -43,6 +46,6 @@ def apply_resource_events(resources: MissionResources, events: MissionEvents | N
 
 
 def advance_state_time(state: MissionState, time_step: int) -> MissionState:
-    """Advance the mission time without mutating the input state."""
+    """Advance the mission time in weekly units without mutating the input state."""
 
     return state.model_copy(update={"time": state.time + time_step}, deep=True)

@@ -298,8 +298,10 @@ def test_mission_step_updates_stored_state(monkeypatch) -> None:
     assert data["mission_state"]["mission_id"] == mission_state["mission_id"]
     assert data["mission_state"]["time"] == mission_state["time"] + 3
     assert data["mission_state"]["resources"]["water"] < mission_state["resources"]["water"]
+    assert data["mission_state"]["resources"]["energy"] < mission_state["resources"]["energy"]
     assert len(data["mission_state"]["history"]) >= 2
     assert data["adaptation_summary"]
+    assert data["adaptation_summary"].startswith("Week 3:")
     assert "water drop" in data["adaptation_summary"].lower()
     assert "risk" in data["adaptation_summary"].lower()
     assert data["ui_enhanced"]["adaptation_summary"]
@@ -348,6 +350,46 @@ def test_mission_step_works_after_simulation_start(monkeypatch) -> None:
     data = response.json()
     assert data["mission_state"]["mission_id"] == mission_id
     assert data["mission_state"]["time"] == 2
+    assert data["adaptation_summary"].startswith("Week 2:")
     assert data["mission_status"] in {"NOMINAL", "WATCH", "CRITICAL"}
     assert data["operational_note"]
     assert data["adaptation_summary"]
+
+
+def test_mission_step_applies_weekly_baseline_drain_without_explicit_events(monkeypatch) -> None:
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    bootstrap = client.post(
+        "/simulation/start",
+        json={
+            "mission_profile": {
+                "environment": "moon",
+                "duration": "medium",
+                "constraints": {
+                    "water": "medium",
+                    "energy": "medium",
+                    "area": "medium",
+                },
+                "goal": "balanced",
+            },
+            "selected_crop": "Lactuca sativa (Marul)",
+            "selected_algae": "Chlorella vulgaris",
+            "selected_microbial": "Saccharomyces boulardii",
+        },
+    )
+    assert bootstrap.status_code == 200
+    bootstrap_data = bootstrap.json()
+
+    response = client.post(
+        "/mission/step",
+        json={
+            "mission_id": bootstrap_data["mission_state"]["mission_id"],
+            "time_step": 1,
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["mission_state"]["time"] == 1
+    assert data["mission_state"]["resources"]["water"] < bootstrap_data["mission_state"]["resources"]["water"]
+    assert data["mission_state"]["resources"]["energy"] < bootstrap_data["mission_state"]["resources"]["energy"]
+    assert data["adaptation_summary"].startswith("Week 1:")

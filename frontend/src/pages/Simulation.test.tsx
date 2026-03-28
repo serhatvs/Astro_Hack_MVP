@@ -161,6 +161,8 @@ describe("Simulation page", () => {
     expect(screen.getByText("Chlorella Vulgaris")).toBeInTheDocument();
     expect(screen.getByText("Saccharomyces Boulardii")).toBeInTheDocument();
     expect(screen.getByText("Custom simulation executive summary")).toBeInTheDocument();
+    expect(screen.getByText(/Current Week:/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Next Week/i })).toBeInTheDocument();
   });
 
   it("restores the latest simulation session from localStorage on refresh", () => {
@@ -176,6 +178,7 @@ describe("Simulation page", () => {
 
     expect(screen.getByText("Lactuca Sativa (Marul)")).toBeInTheDocument();
     expect(screen.getByText("Deterministic Simulation")).toBeInTheDocument();
+    expect(screen.getByText(/Mission Horizon:/i)).toBeInTheDocument();
   });
 
   it("shows a strong failure banner when the simulation reaches a critical state", () => {
@@ -253,5 +256,6 @@ describe("Simulation page", () => {
     expect(screen.queryByText("Simulation Over")).not.toBeInTheDocument();
     expect(screen.getByText("Deterministic Simulation")).toBeInTheDocument();
     expect(screen.getByText(/Simulation Status: Running/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Next Week/i })).toBeInTheDocument();
   });
 });

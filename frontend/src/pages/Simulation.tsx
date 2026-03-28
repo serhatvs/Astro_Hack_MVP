@@ -30,11 +30,8 @@ const statusClass = (status: MissionStatus) => {
   return "border-neon-green/40 bg-neon-green/15 text-neon-green";
 };
 
-const durationTargets = {
-  short: 30,
-  medium: 180,
-  long: 365,
-} as const;
+const MAX_SIMULATION_WEEKS = 12;
+const WEEKLY_STEP = 1;
 
 const formatPercentish = (value?: number | null) => {
   if (typeof value !== "number" || Number.isNaN(value)) {
@@ -101,12 +98,12 @@ const parseSystemChange = (value: string) => {
 
 const buildEventFeedback = (events: MissionEventsPayload | null | undefined) => {
   if (!events) {
-    return "No event applied yet.";
+    return "No weekly event applied yet.";
   }
 
   const active = Object.entries(events).filter(([, value]) => value !== null && value !== undefined);
   if (active.length === 0) {
-    return "No event applied yet.";
+    return "No weekly event applied yet.";
   }
 
   const fragments = active.map(([key, value]) => {
@@ -117,7 +114,7 @@ const buildEventFeedback = (events: MissionEventsPayload | null | undefined) => 
     return label;
   });
 
-  return `${fragments.join(" | ")} applied`;
+  return `${fragments.join(" | ")} applied this week`;
 };
 
 const buildImpactSnapshot = (
@@ -141,7 +138,7 @@ const buildImpactSnapshot = (
   }
 
   if (fragments.length === 0) {
-    return "The latest step preserved the current ecosystem conditions.";
+    return "This week preserved the current ecosystem conditions.";
   }
 
   const base = fragments.slice(0, 2).join(" and ");
@@ -155,7 +152,7 @@ const buildImpactSnapshot = (
           : "while risk held near baseline";
   const systemEffect = systemChanged ? " while forcing a stack adjustment" : "";
 
-  return `${base} ${riskEffect}${systemEffect}.`;
+  return `This week, ${base.toLowerCase()} ${riskEffect}${systemEffect}.`;
 };
 
 const buildLayerInteractionHints = (
@@ -230,7 +227,7 @@ const resolveEndReason = (
 
   return {
     key: "step_limit",
-    text: "Simulation reached its maximum duration",
+    text: `Simulation reached its ${MAX_SIMULATION_WEEKS}-week mission horizon`,
   };
 };
 
@@ -252,7 +249,6 @@ const Simulation = () => {
   const [session, setSession] = useState<SimulationSession | null>(initialBundle?.current ?? null);
   const [previousSession, setPreviousSession] = useState<SimulationSession | null>(initialBundle?.previous ?? null);
   const [initialSession, setInitialSession] = useState<SimulationSession | null>(initialBundle?.initial ?? initialBundle?.current ?? null);
-  const [timeStep, setTimeStep] = useState("1");
   const [waterDrop, setWaterDrop] = useState("");
   const [energyDrop, setEnergyDrop] = useState("");
   const [contamination, setContamination] = useState("");
@@ -326,7 +322,6 @@ const Simulation = () => {
     ("adaptation_summary" in session ? session.adaptation_summary : "") ||
     session.ui_enhanced?.adaptation_summary ||
     "Simulation initialized with the selected biological stack. Apply mission events to see how the loop responds.";
-  const targetDurationDays = durationTargets[missionState.duration];
   const currentRisk = missionState.system_metrics.risk_level;
   const previousRisk =
     typeof riskDelta === "number"
@@ -335,7 +330,7 @@ const Simulation = () => {
   const simulationStatus: SimulationStatusLabel =
     session.mission_status === "CRITICAL"
       ? "failure"
-      : missionState.time >= targetDurationDays
+      : missionState.time >= MAX_SIMULATION_WEEKS
         ? "complete"
         : "running";
   const simulationStatusTone =
@@ -359,7 +354,7 @@ const Simulation = () => {
   const endSummary =
     simulationStatus === "running"
       ? null
-      : `${endReason?.text || "Simulation finished."} Final risk settled at ${currentRisk.toFixed(2)}%.`;
+      : `${endReason?.text || "Simulation finished."} Final risk settled at ${currentRisk.toFixed(2)}% after ${missionState.time} week(s).`;
   const riskTrend =
     riskDelta === null
       ? "Baseline"
@@ -452,7 +447,6 @@ const Simulation = () => {
     : [];
 
   const handleApplyStep = async () => {
-    const parsedTimeStep = Math.max(1, Math.min(365, Number.parseInt(timeStep || "1", 10) || 1));
     const parsedWater = parseOptionalNumber(waterDrop);
     const parsedEnergy = parseOptionalNumber(energyDrop);
     const parsedContamination = parseOptionalNumber(contamination);
@@ -477,7 +471,7 @@ const Simulation = () => {
       const currentSession = session;
       const response = await stepMission({
         mission_id: missionState.mission_id,
-        time_step: parsedTimeStep,
+        time_step: WEEKLY_STEP,
         events: Object.keys(events).length > 0 ? events : undefined,
       });
       setPreviousSession(currentSession);
@@ -488,7 +482,7 @@ const Simulation = () => {
       setEnergyDrop("");
       setContamination("");
       setYieldDrop("");
-      toast.success("Simulation step applied", {
+      toast.success("Week advanced", {
         description: `${buildEventFeedback(Object.keys(events).length > 0 ? events : null)} ${response.adaptation_summary}`,
       });
     } catch (requestError) {
@@ -508,7 +502,6 @@ const Simulation = () => {
     setPreviousSession(null);
     setSession(initialSession);
     saveSimulationSession(initialSession, null, initialSession);
-    setTimeStep("1");
     setWaterDrop("");
     setEnergyDrop("");
     setContamination("");
@@ -548,7 +541,7 @@ const Simulation = () => {
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <div className="rounded-lg border border-glass-border bg-muted/10 p-4">
-                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Total Steps Survived</p>
+                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Total Weeks Survived</p>
                 <p className="mt-2 text-2xl font-mono text-foreground">{missionState.time}</p>
               </div>
               <div className="rounded-lg border border-glass-border bg-muted/10 p-4">
@@ -571,10 +564,10 @@ const Simulation = () => {
               </div>
             </div>
 
-            <div className="rounded-lg border border-glass-border bg-muted/10 p-4">
-              <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">End Reason</p>
-              <p className="mt-2 text-sm text-foreground">{endReason?.text || "Simulation ended."}</p>
-            </div>
+              <div className="rounded-lg border border-glass-border bg-muted/10 p-4">
+                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">End Reason</p>
+                <p className="mt-2 text-sm text-foreground">{endReason?.text || "Simulation ended."}</p>
+              </div>
 
             <div className="rounded-lg border border-glass-border bg-terminal/50 p-4">
               <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Final Deterministic Summary</p>
@@ -587,7 +580,7 @@ const Simulation = () => {
                 <div className="mt-2 space-y-2 text-sm text-foreground/80">
                   {recentTimeline.map((entry) => (
                     <p key={`${entry.step}-${entry.event}`}>
-                      Step {entry.step}: {formatLabel(entry.event)}. {entry.summary}
+                      Week {entry.step}: {formatLabel(entry.event)}. {entry.summary}
                     </p>
                   ))}
                 </div>
@@ -636,9 +629,9 @@ const Simulation = () => {
                 <span>Environment: <span className="text-foreground">{formatLabel(missionState.environment)}</span></span>
                 <span>Duration: <span className="text-foreground">{formatLabel(missionState.duration)}</span></span>
                 <span>Goal: <span className="text-foreground">{formatLabel(missionState.goal)}</span></span>
-                <span>Time: <span className="text-foreground">{missionState.time} day(s)</span></span>
-                <span>Current Step: <span className="text-foreground">{missionState.time}</span></span>
-                <span>Last Event: <span className="text-foreground">{lastEventFeedback}</span></span>
+                <span>Mission Horizon: <span className="text-foreground">{MAX_SIMULATION_WEEKS} weeks</span></span>
+                <span>Current Week: <span className="text-foreground">{missionState.time}</span></span>
+                <span>Last Weekly Event: <span className="text-foreground">{lastEventFeedback}</span></span>
                 <span>
                   Mode: <span className="text-neon-green">Deterministic Simulation</span>
                 </span>
@@ -801,10 +794,6 @@ const Simulation = () => {
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1">
-                <label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Time Step</label>
-                <Input value={timeStep} onChange={(event) => setTimeStep(event.target.value)} type="number" min={1} max={365} className="h-9 border-glass-border bg-muted/50" />
-              </div>
-              <div className="space-y-1">
                 <label className="text-[10px] font-mono uppercase tracking-wider text-neon-cyan">Water Drop</label>
                 <Input value={waterDrop} onChange={(event) => setWaterDrop(event.target.value)} type="number" min={0} max={100} className="h-9 border-glass-border bg-muted/50" placeholder="0-100" />
               </div>
@@ -823,8 +812,7 @@ const Simulation = () => {
             </div>
 
             <div className="rounded-lg border border-glass-border bg-black/10 px-3 py-2 text-xs text-muted-foreground">
-              Enter only the events you want to apply. Leaving all event fields empty will still advance the mission by
-              the selected time step.
+              Each progression advances the ecosystem by one week. Leave the event fields empty to run a baseline week.
             </div>
             <div
               className={`rounded-lg border px-3 py-2 text-xs ${
@@ -843,7 +831,7 @@ const Simulation = () => {
               className="mt-auto h-10 bg-primary font-bold uppercase tracking-wider text-primary-foreground hover:bg-primary/90"
             >
               {isApplyingStep ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FlaskConical className="mr-2 h-4 w-4" />}
-              {isApplyingStep ? "Applying Step" : simulationStatus === "running" ? "Apply Simulation Step" : "Simulation Closed"}
+              {isApplyingStep ? "Advancing Week" : simulationStatus === "running" ? "Next Week" : "Simulation Closed"}
             </Button>
           </div>
         </div>
@@ -871,6 +859,9 @@ const Simulation = () => {
                 showUpdateHighlight ? "border-neon-cyan/35" : "border-glass-border"
               }`}
             >
+              <p className="mb-2 text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+                Week {missionState.time} Summary
+              </p>
               <p className="text-xs leading-relaxed text-foreground/80">{adaptationSummary}</p>
             </div>
 
@@ -908,10 +899,10 @@ const Simulation = () => {
                 </p>
               </div>
               <div className="rounded-lg border border-glass-border bg-muted/10 p-3">
-                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Current Time</p>
-                <p className="mt-2 text-lg font-mono text-foreground">{missionState.time} day(s)</p>
+                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Current Week</p>
+                <p className="mt-2 text-lg font-mono text-foreground">{missionState.time} week(s)</p>
                 <p className="mt-1 text-xs font-mono text-muted-foreground">
-                  {latestEvents ? Object.values(latestEvents).filter((value) => value !== null && value !== undefined).length : 0} active event(s)
+                  {latestEvents ? Object.values(latestEvents).filter((value) => value !== null && value !== undefined).length : 0} active weekly event(s)
                 </p>
               </div>
             </div>

@@ -20,7 +20,13 @@ from app.core.mission_state import (
 )
 from app.core.risk import evaluate_risk
 from app.core.scoring import score_crops
-from app.core.simulation import MissionEvents, MissionStepRequest, advance_state_time, apply_resource_events
+from app.core.simulation import (
+    SIMULATION_MAX_WEEKS,
+    MissionEvents,
+    MissionStepRequest,
+    advance_state_time,
+    apply_resource_events,
+)
 from app.engine.crop_engine import ALGAE_LIKE_NAMES
 from app.engine.integration_engine import IntegrationEngine
 from app.llm.reasoning_loop import ReasoningLoop
@@ -376,7 +382,8 @@ class RecommendationEngine:
 
         previous_state = state.model_copy(deep=True)
         updated_state = advance_state_time(state, request.time_step)
-        updated_resources = apply_resource_events(updated_state.resources, request.events)
+        weekly_resources = self._apply_weekly_resource_usage(updated_state, request.time_step)
+        updated_resources = apply_resource_events(weekly_resources, request.events)
         updated_constraints = MissionConstraints(
             water=self._margin_to_constraint(updated_resources.water),
             energy=self._margin_to_constraint(updated_resources.energy),
@@ -393,21 +400,31 @@ class RecommendationEngine:
             goal=updated_state.goal,
         )
         event_adjustments = self._derive_event_adjustments(previous_state, request.events)
+        weekly_adjustments = self._derive_weekly_adjustments(
+            previous_state,
+            updated_resources,
+            request.events,
+            request.time_step,
+        )
 
         response = self.recommend(
             mission=mission,
-            temporary_penalties=event_adjustments["temporary_penalties"],
-            status_penalty=event_adjustments["status_penalty"],
+            temporary_penalties=self._merge_penalties(
+                event_adjustments["temporary_penalties"],
+                weekly_adjustments["temporary_penalties"],
+            ),
+            status_penalty=bool(event_adjustments["status_penalty"] or weekly_adjustments["status_penalty"]),
             existing_state=updated_state,
-            risk_bias=event_adjustments["risk_bias"],
-            complexity_bias=event_adjustments["complexity_bias"],
-            loop_bias=event_adjustments["loop_bias"],
+            risk_bias=round(event_adjustments["risk_bias"] * weekly_adjustments["risk_bias"], 3),
+            complexity_bias=round(event_adjustments["complexity_bias"] * weekly_adjustments["complexity_bias"], 3),
+            loop_bias=round(event_adjustments["loop_bias"] * weekly_adjustments["loop_bias"], 3),
             history_event=self._build_step_event_label(request.events),
             source="mission_step",
             previous_state=previous_state,
             events=request.events,
             deltas={
                 "time_step": request.time_step,
+                "time_unit": "week",
             },
             allow_refinement=False,
             use_llm=False,
@@ -424,6 +441,7 @@ class RecommendationEngine:
             events=request.events,
             system_changes=system_changes,
             risk_delta=risk_delta,
+            request_time_step=request.time_step,
         )
         step_narrative = self.reasoning_loop.analyze_response(
             response,
@@ -959,6 +977,108 @@ class RecommendationEngine:
             return ConstraintLevel.MEDIUM
         return ConstraintLevel.HIGH
 
+    def _resolve_active_candidates(self, state: MissionState) -> tuple[Any | None, Any | None, Any | None]:
+        crop_name = state.active_system.crops[0].name if state.active_system.crops else None
+        algae_name = state.active_system.algae[0].name if state.active_system.algae else None
+        microbial_name = state.active_system.microbial[0].name if state.active_system.microbial else None
+
+        crop = next((item for item in self.provider.get_crops() if item.name == crop_name), None)
+        algae = next((item for item in self.provider.get_algae_systems() if item.name == algae_name), None)
+        microbial = next((item for item in self.provider.get_microbial_systems() if item.name == microbial_name), None)
+        return crop, algae, microbial
+
+    def _apply_weekly_resource_usage(self, state: MissionState, weeks: int) -> MissionResources:
+        crop, algae, microbial = self._resolve_active_candidates(state)
+
+        crop_water = (0.8 + ((crop.water_need / 55) if crop else 0.9)) * weeks
+        crop_energy = (0.55 + ((crop.energy_need / 85) if crop else 0.75)) * weeks
+        crop_area = (0.25 + ((crop.area_need / 150) if crop else 0.35)) * weeks
+
+        algae_water = max(0.0, ((100 - algae.water_system_compatibility) / 250) if algae else 0.18) * weeks
+        algae_energy = (0.3 + ((algae.energy_light_dependency / 120) if algae else 0.45)) * weeks
+
+        microbial_water_offset = ((microbial.waste_recycling_efficiency / 240) if microbial else 0.12) * weeks
+        microbial_energy = (0.2 + ((microbial.reactor_dependency / 260) if microbial else 0.28)) * weeks
+        microbial_area = (0.1 + ((microbial.maintenance_burden / 400) if microbial else 0.14)) * weeks
+
+        water_use = max(0.8 * weeks, crop_water + algae_water + (0.25 * weeks) - microbial_water_offset)
+        energy_use = max(0.8 * weeks, crop_energy + algae_energy + microbial_energy + (0.3 * weeks))
+        area_use = max(0.25 * weeks, crop_area + microbial_area)
+
+        return MissionResources(
+            water=self._clamp_resource(state.resources.water - water_use),
+            energy=self._clamp_resource(state.resources.energy - energy_use),
+            area=self._clamp_resource(state.resources.area - area_use),
+        )
+
+    def _derive_weekly_adjustments(
+        self,
+        state: MissionState,
+        resources: MissionResources,
+        events: MissionEvents | None,
+        weeks: int,
+    ) -> dict[str, object]:
+        crop, algae, microbial = self._resolve_active_candidates(state)
+        temporary_penalties: dict[str, float] | None = None
+        status_penalty = False
+        risk_bias = 1.0
+        complexity_bias = 1.0
+        loop_bias = 1.0
+
+        if crop is not None:
+            risk_bias += weeks * ((crop.risk + crop.maintenance) / 5000)
+            complexity_bias += weeks * (crop.maintenance / 7000)
+        if algae is not None:
+            risk_bias -= weeks * (algae.oxygen_contribution / 5000)
+            complexity_bias += weeks * (algae.energy_light_dependency / 5000)
+            loop_bias += weeks * (algae.co2_utilization / 7000)
+        if microbial is not None:
+            risk_bias -= weeks * (microbial.nutrient_conversion_capability / 6500)
+            complexity_bias += weeks * (microbial.maintenance_burden / 7000)
+            loop_bias += weeks * (microbial.loop_closure_contribution / 4500)
+
+        if resources.water < 50:
+            risk_bias += (50 - resources.water) / 220
+        if resources.energy < 50:
+            risk_bias += (50 - resources.energy) / 280
+            complexity_bias += (50 - resources.energy) / 260
+        if resources.area < 45:
+            complexity_bias += (45 - resources.area) / 320
+
+        if crop is not None and (resources.water < 45 or resources.energy < 45):
+            shortage = max(45 - resources.water, 45 - resources.energy, 0) / 100
+            temporary_penalties = {
+                crop.name.lower(): min(0.35, 0.08 + shortage + (crop.growth_time / 500))
+            }
+            status_penalty = True
+
+        if (
+            events is not None
+            and events.contamination is not None
+            and microbial is not None
+        ):
+            risk_bias += (events.contamination * microbial.contamination_risk) / 12000
+
+        return {
+            "temporary_penalties": temporary_penalties,
+            "status_penalty": status_penalty,
+            "risk_bias": round(max(0.8, risk_bias), 3),
+            "complexity_bias": round(max(0.85, complexity_bias), 3),
+            "loop_bias": round(max(0.85, loop_bias), 3),
+        }
+
+    def _merge_penalties(
+        self,
+        first: dict[str, float] | None,
+        second: dict[str, float] | None,
+    ) -> dict[str, float] | None:
+        if not first and not second:
+            return None
+        merged = dict(first or {})
+        for key, value in (second or {}).items():
+            merged[key] = max(merged.get(key, 0.0), value)
+        return merged
+
     def _derive_event_adjustments(
         self,
         state: MissionState,
@@ -1003,9 +1123,9 @@ class RecommendationEngine:
 
     def _build_step_event_label(self, events: MissionEvents | None) -> str:
         if events is None:
-            return "mission_step"
+            return "weekly_progression"
         active_events = [name for name, value in events.model_dump().items() if value is not None]
-        return "mission_step:" + ",".join(active_events or ["none"])
+        return "weekly_progression_" + "_".join(active_events or ["none"])
 
     def _build_system_changes(self, previous_state: MissionState, updated_state: MissionState) -> list[str]:
         changes: list[str] = []
@@ -1028,25 +1148,37 @@ class RecommendationEngine:
             changes.append(f"grow_system:{previous_grow_system}->{updated_grow_system}")
         return changes
 
-    def _build_event_pressure_summary(self, events: MissionEvents | None) -> str:
-        if events is None:
-            return "No major event was applied"
-
+    def _build_event_pressure_summary(
+        self,
+        previous_state: MissionState,
+        updated_state: MissionState,
+        events: MissionEvents | None,
+        request_time_step: int,
+    ) -> str:
         fragments: list[str] = []
-        if events.water_drop is not None:
-            fragments.append("Water drop tightened recovery margin")
-        if events.energy_drop is not None:
-            fragments.append("Energy drop increased power pressure")
-        if events.contamination is not None:
-            fragments.append("Contamination raised biological risk")
-        if events.yield_variation is not None:
-            if events.yield_variation < 0:
-                fragments.append("Yield drop reduced crop output")
-            elif events.yield_variation > 0:
-                fragments.append("Yield variation improved crop output")
+        if events is not None:
+            if events.water_drop is not None:
+                fragments.append("Water drop tightened weekly recovery margin")
+            if events.energy_drop is not None:
+                fragments.append("Energy drop increased weekly power pressure")
+            if events.contamination is not None:
+                fragments.append("Contamination raised biological risk")
+            if events.yield_variation is not None:
+                if events.yield_variation < 0:
+                    fragments.append("Yield drop reduced crop output")
+                elif events.yield_variation > 0:
+                    fragments.append("Yield variation improved crop output")
 
         if not fragments:
-            return "No major event was applied"
+            water_delta = previous_state.resources.water - updated_state.resources.water
+            energy_delta = previous_state.resources.energy - updated_state.resources.energy
+            if water_delta >= energy_delta:
+                fragments.append("Weekly crop demand reduced water reserves")
+            else:
+                fragments.append("Weekly reactor and lighting demand reduced energy reserves")
+            if request_time_step > 1:
+                fragments.append(f"{request_time_step} weeks of baseline load accumulated")
+
         if len(fragments) == 1:
             return fragments[0]
         if len(fragments) == 2:
@@ -1074,6 +1206,21 @@ class RecommendationEngine:
         if delta > 0:
             return f"{label} improved"
         return f"{label} weakened"
+
+    def _build_weekly_driver_summary(
+        self,
+        updated_state: MissionState,
+    ) -> str:
+        crop, algae, microbial = self._resolve_active_candidates(updated_state)
+        if crop is not None and updated_state.resources.water <= updated_state.resources.energy:
+            return f"{crop.name.title()} set the heaviest weekly resource demand"
+        if algae is not None and algae.oxygen_contribution >= 70:
+            return f"{algae.name.title()} buffered atmospheric stress"
+        if microbial is not None and microbial.nutrient_conversion_capability >= 65:
+            return f"{microbial.name.title()} stabilized nutrient recovery"
+        if crop is not None:
+            return f"{crop.name.title()} remained the main food-pressure driver"
+        return "The active biological stack remained the main weekly driver"
 
     def _build_system_change_scope_summary(self, system_changes: list[str]) -> str:
         if not system_changes:
@@ -1118,12 +1265,22 @@ class RecommendationEngine:
         events: MissionEvents | None,
         system_changes: list[str],
         risk_delta: float,
+        request_time_step: int,
     ) -> str:
-        event_summary = self._build_event_pressure_summary(events)
+        event_summary = self._build_event_pressure_summary(
+            previous_state=previous_state,
+            updated_state=updated_state,
+            events=events,
+            request_time_step=request_time_step,
+        )
+        driver_summary = self._build_weekly_driver_summary(updated_state)
         metric_effect = self._build_primary_metric_effect_summary(previous_state, updated_state)
         change_scope = self._build_system_change_scope_summary(system_changes)
         risk_summary = self._build_risk_shift_summary(previous_state, updated_state, risk_delta)
-        return f"{event_summary}. {change_scope}; {metric_effect} and {risk_summary}."
+        return (
+            f"Week {updated_state.time}: {event_summary}. {driver_summary}. "
+            f"{change_scope}; {metric_effect} and {risk_summary}."
+        )
 
     def _compute_ranking_diff(
         self,
