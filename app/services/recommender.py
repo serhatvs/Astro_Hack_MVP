@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from typing import Any
 from functools import lru_cache
 
 from fastapi import HTTPException
@@ -81,7 +82,13 @@ class RecommendationEngine:
         loop_bias: float = 1.0,
         persist_state: bool = True,
         history_event: str = "initial_recommendation",
+        source: str = "recommend",
+        previous_state: MissionState | None = None,
+        events: Mapping[str, Any] | MissionEvents | None = None,
+        deltas: Mapping[str, Any] | None = None,
+        allow_refinement: bool | None = None,
     ) -> RecommendationResponse:
+        allow_refinement = source == "recommend" if allow_refinement is None else allow_refinement
         mission_fit_bias = 0.03 if weight_adjustments else 0.0
 
         integrated_result, _domain_crops, selected_grow_system = self.integration_engine.select_configuration(
@@ -91,6 +98,16 @@ class RecommendationEngine:
             risk_bias=risk_bias,
             complexity_bias=complexity_bias,
             loop_bias=loop_bias,
+        )
+        provisional_explanations = self._build_reasoning_context_explanations(
+            mission=mission,
+            integrated_result=integrated_result,
+            grow_system_name=selected_grow_system.name,
+        )
+        provisional_state_summary = self._build_reasoning_state_summary(
+            mission=mission,
+            integrated_result=integrated_result,
+            existing_state=existing_state,
         )
         integrated_result, _domain_crops, selected_grow_system, llm_analysis = self.reasoning_loop.run(
             mission=mission,
@@ -103,6 +120,13 @@ class RecommendationEngine:
                 "complexity_bias": complexity_bias,
                 "loop_bias": loop_bias,
             },
+            source=source,
+            deterministic_explanations=provisional_explanations,
+            mission_state=provisional_state_summary,
+            previous_state=previous_state,
+            events=events,
+            deltas=deltas,
+            allow_refinement=allow_refinement,
         )
 
         filtered_crops = [
@@ -258,6 +282,16 @@ class RecommendationEngine:
             complexity_bias=complexity_bias,
             loop_bias=loop_bias,
             history_event=f"simulate_{request.change_event.value}",
+            source="simulate",
+            previous_state=baseline_recommendation.mission_state,
+            events={
+                "change_event": request.change_event.value,
+                "affected_crop": request.affected_crop,
+            },
+            deltas={
+                "updated_constraints": updated_mission.constraints.model_dump(mode="json"),
+            },
+            allow_refinement=False,
         )
 
         previous_top_crop = baseline_recommendation.top_crops[0].name if baseline_recommendation.top_crops else None
@@ -270,6 +304,11 @@ class RecommendationEngine:
         risk_delta = self._compute_risk_delta(
             baseline_recommendation.risk_analysis.score,
             updated_recommendation.risk_analysis.score,
+        )
+        ranking_diff = self._compute_ranking_diff(
+            baseline_recommendation.top_crops,
+            updated_recommendation.top_crops,
+            extra_names=[request.affected_crop.lower()] if request.affected_crop else None,
         )
         adaptation_summary = self.explainer.build_simulation_reason(
             change_event=request.change_event,
@@ -286,17 +325,38 @@ class RecommendationEngine:
             updated_recommendation=updated_recommendation,
             updated_mission_profile=updated_mission,
         )
+        updated_llm_analysis = self.reasoning_loop.analyze_response(
+            updated_recommendation,
+            source="simulate",
+            previous_recommendation=baseline_recommendation,
+            events={
+                "change_event": request.change_event.value,
+                "affected_crop": request.affected_crop,
+            },
+            deltas={
+                "changed_fields": changed_fields,
+                "previous_top_crop": previous_top_crop,
+                "new_top_crop": new_top_crop,
+                "ranking_diff": ranking_diff,
+                "system_changed": system_changed,
+                "previous_system": baseline_recommendation.recommended_system,
+                "new_system": updated_recommendation.recommended_system,
+                "risk_delta": risk_delta.value,
+                "risk_score_delta": risk_score_delta,
+                "previous_mission_status": baseline_recommendation.mission_status.value,
+                "new_mission_status": updated_recommendation.mission_status.value,
+            },
+        )
+        updated_recommendation = updated_recommendation.model_copy(
+            update={"llm_analysis": updated_llm_analysis},
+        )
 
         return SimulationResponse(
             change_event=request.change_event,
             changed_fields=changed_fields,
             previous_top_crop=previous_top_crop,
             new_top_crop=new_top_crop,
-            ranking_diff=self._compute_ranking_diff(
-                baseline_recommendation.top_crops,
-                updated_recommendation.top_crops,
-                extra_names=[request.affected_crop.lower()] if request.affected_crop else None,
-            ),
+            ranking_diff=ranking_diff,
             system_changed=system_changed,
             previous_system=baseline_recommendation.recommended_system,
             new_system=updated_recommendation.recommended_system,
@@ -345,6 +405,13 @@ class RecommendationEngine:
             complexity_bias=event_adjustments["complexity_bias"],
             loop_bias=event_adjustments["loop_bias"],
             history_event=self._build_step_event_label(request.events),
+            source="mission_step",
+            previous_state=previous_state,
+            events=request.events,
+            deltas={
+                "time_step": request.time_step,
+            },
+            allow_refinement=False,
         )
 
         system_changes = self._build_system_changes(previous_state, response.mission_state)
@@ -359,18 +426,121 @@ class RecommendationEngine:
             system_changes=system_changes,
             risk_delta=risk_delta,
         )
+        step_llm_analysis = self.reasoning_loop.analyze_response(
+            response,
+            source="mission_step",
+            previous_state=previous_state,
+            events=request.events,
+            deltas={
+                "system_changes": system_changes,
+                "risk_delta": risk_delta,
+                "previous_time": previous_state.time,
+                "new_time": response.mission_state.time,
+            },
+        )
 
         return MissionStepResponse(
             mission_state=response.mission_state,
             selected_system=response.selected_system,
             scores=response.scores,
             explanations=response.explanations,
-            llm_analysis=response.llm_analysis,
+            llm_analysis=step_llm_analysis,
             system_changes=system_changes,
             risk_delta=risk_delta,
             adaptation_summary=adaptation_summary,
             events=request.events,
             request=request,
+        )
+
+    def _build_reasoning_context_explanations(
+        self,
+        mission: MissionProfile,
+        integrated_result,
+        grow_system_name: str,
+    ) -> dict[str, Any]:
+        return {
+            "executive_summary": (
+                f"{self.explainer.format_environment(mission.environment)} mission pre-analysis selected "
+                f"{integrated_result.crop.candidate.name.title()} as the primary food layer with {grow_system_name.title()}."
+            ),
+            "system_reasoning": self._build_integrated_system_reasoning(
+                mission=mission,
+                grow_system_name=grow_system_name,
+                integrated_result=integrated_result,
+            ),
+            "why_this_system": self._build_why_this_system(
+                mission=mission,
+                grow_system_name=grow_system_name,
+                integrated_result=integrated_result,
+            ),
+            "tradeoffs": self._build_tradeoff_summary(
+                integrated_result=integrated_result,
+                grow_system_name=grow_system_name,
+            ),
+        }
+
+    def _build_reasoning_state_summary(
+        self,
+        mission: MissionProfile,
+        integrated_result,
+        existing_state: MissionState | None,
+    ) -> dict[str, Any]:
+        resources = (
+            existing_state.resources.model_dump(mode="json")
+            if existing_state is not None
+            else self._resources_from_constraints(mission.constraints).model_dump(mode="json")
+        )
+        history = (
+            [entry.model_dump(mode="json") for entry in existing_state.history[-5:]]
+            if existing_state is not None
+            else []
+        )
+        risk_score = self._estimate_integrated_risk(integrated_result)
+        return {
+            "mission_id": existing_state.mission_id if existing_state is not None else None,
+            "time": existing_state.time if existing_state is not None else 0,
+            "resources": resources,
+            "active_system": {
+                "crops": [
+                    {
+                        "name": integrated_result.crop.candidate.name,
+                        "type": "crop",
+                        "score": integrated_result.crop.combined_score,
+                        "support_system": integrated_result.grow_system_name,
+                    }
+                ],
+                "algae": [
+                    {
+                        "name": integrated_result.algae.candidate.name,
+                        "type": "algae",
+                        "score": integrated_result.algae.combined_score,
+                    }
+                ],
+                "microbial": [
+                    {
+                        "name": integrated_result.microbial.candidate.name,
+                        "type": "microbial",
+                        "score": integrated_result.microbial.combined_score,
+                    }
+                ],
+            },
+            "system_metrics": self._build_system_metrics(
+                integrated_result=integrated_result,
+                risk_score=risk_score,
+            ).model_dump(mode="json"),
+            "history": history,
+        }
+
+    def _estimate_integrated_risk(self, integrated_result) -> float:
+        return round(
+            (
+                integrated_result.crop.risk_score
+                + integrated_result.algae.risk_score
+                + integrated_result.microbial.risk_score
+                + integrated_result.interaction.conflict_score
+            )
+            / 4,
+            3,
         )
 
     def _build_selected_system(self, integrated_result) -> SelectedSystemBundle:

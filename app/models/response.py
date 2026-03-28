@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
+from collections.abc import Mapping
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -168,6 +169,53 @@ class LLMAnalysis(BaseModel):
     alternative_configuration: dict[str, Any] = Field(default_factory=dict)
     second_pass: dict[str, Any] = Field(default_factory=dict)
     second_pass_decision: dict[str, Any] = Field(default_factory=dict)
+
+    @classmethod
+    def from_payload(
+        cls,
+        payload: Mapping[str, Any] | None = None,
+        default_reasoning: str = "Deterministic fallback analysis remains active.",
+    ) -> "LLMAnalysis":
+        """Create a normalized LLM analysis payload with stable canonical fields."""
+
+        payload = payload or {}
+        improvements = cls._normalize_list(
+            payload.get("improvements", payload.get("improvement_suggestions")),
+        )
+        alternative = cls._normalize_dict(
+            payload.get("alternative", payload.get("alternative_configuration")),
+        )
+        second_pass = cls._normalize_dict(
+            payload.get("second_pass", payload.get("second_pass_decision")),
+        )
+        reasoning_summary = payload.get("reasoning_summary")
+        if not isinstance(reasoning_summary, str) or not reasoning_summary.strip():
+            reasoning_summary = default_reasoning
+
+        return cls(
+            reasoning_summary=reasoning_summary.strip(),
+            weaknesses=cls._normalize_list(payload.get("weaknesses")),
+            improvements=improvements,
+            improvement_suggestions=list(improvements),
+            alternative=alternative,
+            alternative_configuration=dict(alternative),
+            second_pass=second_pass,
+            second_pass_decision=dict(second_pass),
+        )
+
+    @staticmethod
+    def _normalize_list(value: Any) -> list[str]:
+        if isinstance(value, str):
+            value = [value]
+        if not isinstance(value, list):
+            return []
+        return [str(item).strip() for item in value if str(item).strip()]
+
+    @staticmethod
+    def _normalize_dict(value: Any) -> dict[str, Any]:
+        if not isinstance(value, Mapping):
+            return {}
+        return {str(key): item for key, item in value.items()}
 
 
 class RecommendationResponse(BaseModel):
