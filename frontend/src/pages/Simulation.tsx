@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { ArrowDownRight, ArrowLeft, ArrowRight, ArrowUpRight, FlaskConical, Loader2, Orbit, Play, ShieldAlert, Waves, Zap } from "lucide-react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,7 @@ interface SimulationRouteState {
 }
 
 type SimulationStatusLabel = "running" | "complete" | "failure";
+type EndReasonKey = "water_depleted" | "energy_depleted" | "risk_collapse" | "step_limit";
 
 const statusClass = (status: MissionStatus) => {
   if (status === "CRITICAL") {
@@ -196,14 +197,53 @@ const buildLayerInteractionHints = (
   ].filter((item): item is [string, string] => Boolean(item[1]));
 };
 
+const resolveEndReason = (
+  simulationStatus: SimulationStatusLabel,
+  riskLevel: number,
+  waterLevel: number,
+  energyLevel: number,
+): { key: EndReasonKey; text: string } | null => {
+  if (simulationStatus === "running") {
+    return null;
+  }
+
+  if (waterLevel <= 0) {
+    return {
+      key: "water_depleted",
+      text: "Water resources were exhausted",
+    };
+  }
+
+  if (energyLevel <= 0) {
+    return {
+      key: "energy_depleted",
+      text: "Energy supply collapsed",
+    };
+  }
+
+  if (simulationStatus === "failure" || riskLevel >= 80) {
+    return {
+      key: "risk_collapse",
+      text: "System risk exceeded safe limits",
+    };
+  }
+
+  return {
+    key: "step_limit",
+    text: "Simulation reached its maximum duration",
+  };
+};
+
 const Simulation = () => {
   const location = useLocation();
+  const navigate = useNavigate();
   const initialBundle = useMemo(() => {
     const state = (location.state as SimulationRouteState | null)?.session;
     if (hasSimulationSessionShape(state)) {
       return {
         current: state,
         previous: null,
+        initial: state,
       };
     }
     return loadSimulationSession();
@@ -211,6 +251,7 @@ const Simulation = () => {
 
   const [session, setSession] = useState<SimulationSession | null>(initialBundle?.current ?? null);
   const [previousSession, setPreviousSession] = useState<SimulationSession | null>(initialBundle?.previous ?? null);
+  const [initialSession, setInitialSession] = useState<SimulationSession | null>(initialBundle?.initial ?? initialBundle?.current ?? null);
   const [timeStep, setTimeStep] = useState("1");
   const [waterDrop, setWaterDrop] = useState("");
   const [energyDrop, setEnergyDrop] = useState("");
@@ -223,8 +264,8 @@ const Simulation = () => {
     if (!session) {
       return;
     }
-    saveSimulationSession(session, previousSession);
-  }, [previousSession, session]);
+    saveSimulationSession(session, previousSession, initialSession);
+  }, [initialSession, previousSession, session]);
 
   useEffect(() => {
     if (!showUpdateHighlight) {
@@ -309,12 +350,16 @@ const Simulation = () => {
       : simulationStatus === "complete"
         ? "Simulation Complete"
         : "Running";
-  const endReason =
-    simulationStatus === "failure"
-      ? `Critical mission stress ended this run. Final risk level: ${currentRisk.toFixed(2)}%.`
-      : simulationStatus === "complete"
-        ? `Mission duration target reached at ${missionState.time} day(s). Final risk level: ${currentRisk.toFixed(2)}%.`
-        : null;
+  const endReason = resolveEndReason(
+    simulationStatus,
+    currentRisk,
+    missionState.resources.water,
+    missionState.resources.energy,
+  );
+  const endSummary =
+    simulationStatus === "running"
+      ? null
+      : `${endReason?.text || "Simulation finished."} Final risk settled at ${currentRisk.toFixed(2)}%.`;
   const riskTrend =
     riskDelta === null
       ? "Baseline"
@@ -349,6 +394,11 @@ const Simulation = () => {
   });
   const lastEventFeedback = buildEventFeedback(latestEvents);
   const impactSnapshot = buildImpactSnapshot(latestEvents, riskDelta, humanSystemChanges.length > 0);
+  const recentTimeline = missionState.history.slice(-3).map((entry) => ({
+    step: entry.time,
+    event: entry.event,
+    summary: entry.summary,
+  }));
 
   const metricCards = [
     {
@@ -432,7 +482,7 @@ const Simulation = () => {
       });
       setPreviousSession(currentSession);
       setSession(response);
-      saveSimulationSession(response, currentSession);
+      saveSimulationSession(response, currentSession, initialSession);
       setShowUpdateHighlight(true);
       setWaterDrop("");
       setEnergyDrop("");
@@ -449,8 +499,120 @@ const Simulation = () => {
     }
   };
 
+  const handleRunAgain = () => {
+    if (!initialSession) {
+      navigate("/");
+      return;
+    }
+
+    setPreviousSession(null);
+    setSession(initialSession);
+    saveSimulationSession(initialSession, null, initialSession);
+    setTimeStep("1");
+    setWaterDrop("");
+    setEnergyDrop("");
+    setContamination("");
+    setYieldDrop("");
+    setShowUpdateHighlight(false);
+    toast.success("Simulation reset", {
+      description: "The ecosystem returned to its initial launch state.",
+    });
+  };
+
   return (
     <div className="min-h-screen w-full overflow-x-hidden bg-background p-3">
+      {simulationStatus !== "running" && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/88 p-4 backdrop-blur-sm">
+          <div
+            className={`glass-panel flex w-full max-w-3xl flex-col gap-5 overflow-hidden border p-6 shadow-2xl ${
+              simulationStatus === "failure"
+                ? "border-neon-red/45 bg-background/95"
+                : "border-neon-green/45 bg-background/95"
+            }`}
+          >
+            <div className="space-y-3 text-center">
+              <p className={`text-[11px] font-mono uppercase tracking-[0.28em] ${
+                simulationStatus === "failure" ? "text-neon-red" : "text-neon-green"
+              }`}>
+                Simulation Over
+              </p>
+              <h2 className={`text-3xl font-bold tracking-wide ${
+                simulationStatus === "failure" ? "text-neon-red" : "text-neon-green"
+              }`}>
+                {simulationStatus === "failure" ? "System Failure" : "Simulation Complete"}
+              </h2>
+              <p className="mx-auto max-w-2xl text-sm leading-relaxed text-foreground/80">
+                {endSummary}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-lg border border-glass-border bg-muted/10 p-4">
+                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Total Steps Survived</p>
+                <p className="mt-2 text-2xl font-mono text-foreground">{missionState.time}</p>
+              </div>
+              <div className="rounded-lg border border-glass-border bg-muted/10 p-4">
+                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Final Risk Level</p>
+                <p className={`mt-2 text-2xl font-mono ${
+                  simulationStatus === "failure" ? "text-neon-red" : "text-neon-green"
+                }`}>
+                  {currentRisk.toFixed(2)}%
+                </p>
+              </div>
+              <div className="rounded-lg border border-glass-border bg-muted/10 p-4">
+                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Final System Status</p>
+                <p className="mt-2 text-lg font-mono text-foreground">{session.mission_status}</p>
+              </div>
+              <div className="rounded-lg border border-glass-border bg-muted/10 p-4">
+                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Resource Margin</p>
+                <p className="mt-2 text-sm font-mono text-foreground">
+                  Water {Math.round(missionState.resources.water)}% / Energy {Math.round(missionState.resources.energy)}%
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-glass-border bg-muted/10 p-4">
+              <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">End Reason</p>
+              <p className="mt-2 text-sm text-foreground">{endReason?.text || "Simulation ended."}</p>
+            </div>
+
+            <div className="rounded-lg border border-glass-border bg-terminal/50 p-4">
+              <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Final Deterministic Summary</p>
+              <p className="mt-2 text-sm leading-relaxed text-foreground/80">{adaptationSummary}</p>
+            </div>
+
+            {recentTimeline.length > 0 && (
+              <div className="rounded-lg border border-glass-border bg-muted/10 p-4">
+                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Last Events</p>
+                <div className="mt-2 space-y-2 text-sm text-foreground/80">
+                  {recentTimeline.map((entry) => (
+                    <p key={`${entry.step}-${entry.event}`}>
+                      Step {entry.step}: {formatLabel(entry.event)}. {entry.summary}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
+              <Button
+                type="button"
+                onClick={handleRunAgain}
+                className="h-11 bg-primary font-bold uppercase tracking-wider text-primary-foreground hover:bg-primary/90"
+              >
+                Run Again
+              </Button>
+              <Button asChild variant="outline" className="h-11 border-glass-border bg-muted/20 text-foreground hover:bg-muted/35">
+                <Link to="/">
+                  <ArrowLeft className="mr-2 h-4 w-4" />
+                  Back To Mission
+                </Link>
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="mx-auto flex min-h-[calc(100vh-1.5rem)] w-full max-w-[1800px] flex-col gap-3">
         <div className="glass-panel overflow-hidden p-4">
           <div className="flex flex-wrap items-start justify-between gap-4">
@@ -503,39 +665,6 @@ const Simulation = () => {
             </div>
           </div>
         </div>
-
-        {simulationStatus !== "running" && (
-          <div
-            className={`glass-panel overflow-hidden p-4 ${
-              simulationStatus === "failure"
-                ? "border-neon-red/40 bg-neon-red/10"
-                : "border-neon-green/35 bg-neon-green/8"
-            }`}
-          >
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="space-y-1">
-                <p
-                  className={`text-lg font-bold uppercase tracking-[0.16em] ${
-                    simulationStatus === "failure" ? "text-neon-red" : "text-neon-green"
-                  }`}
-                >
-                  {simulationStatus === "failure" ? "System Failure" : "Simulation Complete"}
-                </p>
-                <p className="text-sm text-foreground/85">{endReason}</p>
-              </div>
-              <div className="rounded-lg border border-glass-border bg-black/10 px-3 py-2 text-right">
-                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Final Risk Level</p>
-                <p
-                  className={`mt-1 text-xl font-mono ${
-                    simulationStatus === "failure" ? "text-neon-red" : "text-neon-green"
-                  }`}
-                >
-                  {currentRisk.toFixed(2)}%
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
 
         <div className="glass-panel flex min-w-0 flex-col gap-4 overflow-hidden p-4">
           <div className="flex items-center gap-2">

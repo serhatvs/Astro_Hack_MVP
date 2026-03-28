@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -199,7 +199,59 @@ describe("Simulation page", () => {
       </MemoryRouter>
     );
 
+    expect(screen.getByText("Simulation Over")).toBeInTheDocument();
     expect(screen.getByText("System Failure")).toBeInTheDocument();
+    expect(screen.getByText("Run Again")).toBeInTheDocument();
     expect(screen.getByText(/^Final Risk Level$/i)).toBeInTheDocument();
+  });
+
+  it("resets back to the initial simulation state when Run Again is selected", () => {
+    const failedSession: SimulationStartResponse = {
+      ...session,
+      mission_status: "CRITICAL",
+      mission_state: {
+        ...session.mission_state,
+        time: 12,
+        resources: {
+          water: 18,
+          energy: 26,
+          area: 62,
+        },
+        system_metrics: {
+          ...session.mission_state.system_metrics,
+          risk_level: 82,
+        },
+        history: [
+          {
+            time: 10,
+            event: "water_drop",
+            summary: "Water reserves tightened sharply.",
+            risk_level: 68,
+          },
+          {
+            time: 12,
+            event: "contamination",
+            summary: "Biological stress pushed the system beyond safe limits.",
+            risk_level: 82,
+          },
+        ],
+      },
+    };
+
+    saveSimulationSession(failedSession, session, session);
+
+    render(
+      <MemoryRouter initialEntries={["/simulation"]}>
+        <Routes>
+          <Route path="/simulation" element={<Simulation />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Run Again/i }));
+
+    expect(screen.queryByText("Simulation Over")).not.toBeInTheDocument();
+    expect(screen.getByText("Deterministic Simulation")).toBeInTheDocument();
+    expect(screen.getByText(/Simulation Status: Running/i)).toBeInTheDocument();
   });
 });

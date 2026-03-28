@@ -5,6 +5,7 @@ export type SimulationSession = MissionStepResponse | SimulationStartResponse;
 interface StoredSimulationSession {
   current: SimulationSession;
   previous: SimulationSession | null;
+  initial: SimulationSession;
 }
 
 const STORAGE_KEY = "astro-hack:simulation-session";
@@ -34,9 +35,12 @@ export const loadSimulationSession = (): StoredSimulationSession | null => {
       return null;
     }
 
+    const initial = hasSessionShape(parsed.initial) ? parsed.initial : parsed.current;
+
     return {
       current: parsed.current,
       previous: hasSessionShape(parsed.previous) ? parsed.previous : null,
+      initial,
     };
   } catch {
     window.localStorage.removeItem(STORAGE_KEY);
@@ -47,16 +51,24 @@ export const loadSimulationSession = (): StoredSimulationSession | null => {
 export const saveSimulationSession = (
   current: SimulationSession,
   previous: SimulationSession | null = null,
+  initial?: SimulationSession | null,
 ): void => {
   if (typeof window === "undefined") {
     return;
   }
+
+  const existing = loadSimulationSession();
+  const resolvedInitial =
+    (initial && hasSessionShape(initial) && initial) ||
+    existing?.initial ||
+    current;
 
   window.localStorage.setItem(
     STORAGE_KEY,
     JSON.stringify({
       current,
       previous,
+      initial: resolvedInitial,
     }),
   );
 };
