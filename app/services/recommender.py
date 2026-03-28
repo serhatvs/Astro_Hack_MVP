@@ -109,7 +109,7 @@ class RecommendationEngine:
             integrated_result=integrated_result,
             existing_state=existing_state,
         )
-        integrated_result, _domain_crops, selected_grow_system, llm_analysis = self.reasoning_loop.run(
+        integrated_result, _domain_crops, selected_grow_system, narrative = self.reasoning_loop.run(
             mission=mission,
             result=integrated_result,
             top_crop_rankings=[],
@@ -127,7 +127,10 @@ class RecommendationEngine:
             events=events,
             deltas=deltas,
             allow_refinement=allow_refinement,
+            invoke_gemini=source == "recommend",
         )
+        llm_analysis = narrative.debug_layer
+        ui_enhanced = narrative.ui_layer
 
         filtered_crops = [
             crop
@@ -220,6 +223,7 @@ class RecommendationEngine:
                 tradeoffs=tradeoff_summary,
                 weak_points=weak_points,
             ),
+            ui_enhanced=ui_enhanced,
             llm_analysis=llm_analysis,
             top_crops=crop_recommendations,
             recommended_system=selected_grow_system.name,
@@ -236,7 +240,11 @@ class RecommendationEngine:
         )
 
     def simulate(self, request: SimulationRequest) -> SimulationResponse:
-        baseline_recommendation = request.previous_recommendation or self.recommend(request.mission_profile)
+        baseline_recommendation = request.previous_recommendation or self.recommend(
+            request.mission_profile,
+            source="simulate",
+            allow_refinement=False,
+        )
         updated_mission = request.mission_profile
         temporary_penalties: dict[str, float] | None = None
         weight_adjustments: dict[str, float] | None = None
@@ -325,7 +333,7 @@ class RecommendationEngine:
             updated_recommendation=updated_recommendation,
             updated_mission_profile=updated_mission,
         )
-        updated_llm_analysis = self.reasoning_loop.analyze_response(
+        updated_narrative = self.reasoning_loop.analyze_response(
             updated_recommendation,
             source="simulate",
             previous_recommendation=baseline_recommendation,
@@ -345,10 +353,14 @@ class RecommendationEngine:
                 "risk_score_delta": risk_score_delta,
                 "previous_mission_status": baseline_recommendation.mission_status.value,
                 "new_mission_status": updated_recommendation.mission_status.value,
+                "adaptation_summary": adaptation_summary,
             },
         )
         updated_recommendation = updated_recommendation.model_copy(
-            update={"llm_analysis": updated_llm_analysis},
+            update={
+                "llm_analysis": updated_narrative.debug_layer,
+                "ui_enhanced": updated_narrative.ui_layer,
+            },
         )
 
         return SimulationResponse(
@@ -426,7 +438,7 @@ class RecommendationEngine:
             system_changes=system_changes,
             risk_delta=risk_delta,
         )
-        step_llm_analysis = self.reasoning_loop.analyze_response(
+        step_narrative = self.reasoning_loop.analyze_response(
             response,
             source="mission_step",
             previous_state=previous_state,
@@ -436,6 +448,7 @@ class RecommendationEngine:
                 "risk_delta": risk_delta,
                 "previous_time": previous_state.time,
                 "new_time": response.mission_state.time,
+                "adaptation_summary": adaptation_summary,
             },
         )
 
@@ -444,7 +457,8 @@ class RecommendationEngine:
             selected_system=response.selected_system,
             scores=response.scores,
             explanations=response.explanations,
-            llm_analysis=step_llm_analysis,
+            ui_enhanced=step_narrative.ui_layer,
+            llm_analysis=step_narrative.debug_layer,
             system_changes=system_changes,
             risk_delta=risk_delta,
             adaptation_summary=adaptation_summary,

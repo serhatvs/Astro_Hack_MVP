@@ -156,6 +156,49 @@ class ExplanationBundle(BaseModel):
     weak_points: str
 
 
+class UIEnhancedNarrative(BaseModel):
+    """UI-ready Gemini or deterministic summary layer."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    crop_note: str = ""
+    algae_note: str = ""
+    microbial_note: str = ""
+    executive_summary: str = ""
+    adaptation_summary: str = ""
+
+    @classmethod
+    def from_payload(
+        cls,
+        payload: Mapping[str, Any] | None = None,
+        defaults: Mapping[str, Any] | None = None,
+    ) -> "UIEnhancedNarrative":
+        """Create a normalized UI summary payload with stable keys."""
+
+        payload = payload or {}
+        defaults = defaults or {}
+        return cls(
+            crop_note=cls._normalize_text(payload.get("crop_note"), defaults.get("crop_note", "")),
+            algae_note=cls._normalize_text(payload.get("algae_note"), defaults.get("algae_note", "")),
+            microbial_note=cls._normalize_text(payload.get("microbial_note"), defaults.get("microbial_note", "")),
+            executive_summary=cls._normalize_text(
+                payload.get("executive_summary"),
+                defaults.get("executive_summary", ""),
+            ),
+            adaptation_summary=cls._normalize_text(
+                payload.get("adaptation_summary"),
+                defaults.get("adaptation_summary", ""),
+            ),
+        )
+
+    @staticmethod
+    def _normalize_text(value: Any, default: str = "") -> str:
+        if not isinstance(value, str):
+            return str(default).strip()
+        value = value.strip()
+        return value if value else str(default).strip()
+
+
 class LLMAnalysis(BaseModel):
     """Structured LLM critic output."""
 
@@ -218,6 +261,37 @@ class LLMAnalysis(BaseModel):
         return {str(key): item for key, item in value.items()}
 
 
+class GeminiNarrative(BaseModel):
+    """Combined Gemini output contract used internally and exposed partly via API."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    ui_layer: UIEnhancedNarrative
+    debug_layer: LLMAnalysis
+
+    @classmethod
+    def from_payload(
+        cls,
+        payload: Mapping[str, Any] | None = None,
+        *,
+        default_ui: Mapping[str, Any] | None = None,
+        default_reasoning: str = "Deterministic fallback analysis remains active.",
+    ) -> "GeminiNarrative":
+        payload = payload or {}
+        ui_payload = payload.get("ui_layer")
+        debug_payload = payload.get("debug_layer")
+
+        if not isinstance(ui_payload, Mapping):
+            ui_payload = {}
+        if not isinstance(debug_payload, Mapping):
+            debug_payload = {}
+
+        return cls(
+            ui_layer=UIEnhancedNarrative.from_payload(ui_payload, defaults=default_ui),
+            debug_layer=LLMAnalysis.from_payload(debug_payload, default_reasoning=default_reasoning),
+        )
+
+
 class RecommendationResponse(BaseModel):
     """Main response body returned by the recommendation engine."""
 
@@ -228,6 +302,7 @@ class RecommendationResponse(BaseModel):
     selected_system: SelectedSystemBundle
     scores: ScoreBundle
     explanations: ExplanationBundle
+    ui_enhanced: UIEnhancedNarrative
     llm_analysis: LLMAnalysis
     top_crops: list[CropRecommendation]
     recommended_system: str
@@ -293,6 +368,7 @@ class MissionStepResponse(BaseModel):
     selected_system: SelectedSystemBundle
     scores: ScoreBundle
     explanations: ExplanationBundle
+    ui_enhanced: UIEnhancedNarrative
     llm_analysis: LLMAnalysis
     system_changes: list[str] = Field(default_factory=list)
     risk_delta: float

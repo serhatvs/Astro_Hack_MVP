@@ -7,7 +7,7 @@ import logging
 import os
 from typing import Any
 
-from app.models.response import LLMAnalysis
+from app.models.response import GeminiNarrative
 
 
 logger = logging.getLogger(__name__)
@@ -23,8 +23,14 @@ class GeminiClient:
     def is_available(self) -> bool:
         return bool(self.api_key)
 
-    def analyze(self, payload: dict[str, Any]) -> LLMAnalysis | None:
-        """Ask Gemini to critique a deterministic recommendation.
+    def analyze(
+        self,
+        payload: dict[str, Any],
+        *,
+        fallback_ui: dict[str, Any] | None = None,
+        default_reasoning: str = "Gemini returned incomplete analysis; deterministic fallback remains active.",
+    ) -> GeminiNarrative | None:
+        """Ask Gemini to rewrite UI summaries and critique a deterministic recommendation.
 
         The app remains deterministic-first: if Gemini is unavailable, missing,
         or returns malformed output, callers should fall back to rule-based analysis.
@@ -73,55 +79,79 @@ class GeminiClient:
             logger.warning("Gemini returned non-object JSON; using deterministic fallback.")
             return None
 
-        logger.info("Gemini analysis succeeded.")
-        analysis = LLMAnalysis.from_payload(
+        narrative = GeminiNarrative.from_payload(
             parsed,
-            default_reasoning="Gemini returned incomplete analysis; deterministic fallback remains active.",
+            default_ui=fallback_ui,
+            default_reasoning=default_reasoning,
         )
-        if not analysis.reasoning_summary.endswith(" -gemini"):
-            analysis = analysis.model_copy(
-                update={"reasoning_summary": f"{analysis.reasoning_summary} -gemini"}
+        if not narrative.debug_layer.reasoning_summary.endswith(" -gemini"):
+            narrative = narrative.model_copy(
+                update={
+                    "debug_layer": narrative.debug_layer.model_copy(
+                        update={
+                            "reasoning_summary": f"{narrative.debug_layer.reasoning_summary} -gemini"
+                        }
+                    )
+                }
             )
-        return analysis
+        logger.info("Gemini analysis succeeded.")
+        return narrative
 
     def _build_prompt(self, payload: dict[str, Any]) -> str:
         schema = {
-            "reasoning_summary": "string",
-            "weaknesses": ["string"],
-            "improvements": ["string"],
-            "alternative": {
-                "crop": "string|null",
-                "algae": "string|null",
-                "microbial": "string|null",
-                "grow_system": "string|null",
-                "rationale": "string",
+            "ui_layer": {
+                "crop_note": "string",
+                "algae_note": "string",
+                "microbial_note": "string",
+                "executive_summary": "string",
+                "adaptation_summary": "string",
             },
-            "second_pass": {
-                "decision": "retain|refine",
-                "rationale": "string",
-                "selected_configuration": {
+            "debug_layer": {
+                "reasoning_summary": "string",
+                "weaknesses": ["string"],
+                "improvements": ["string"],
+                "alternative": {
                     "crop": "string|null",
                     "algae": "string|null",
                     "microbial": "string|null",
                     "grow_system": "string|null",
+                    "rationale": "string",
+                },
+                "second_pass": {
+                    "decision": "retain|refine",
+                    "rationale": "string",
+                    "selected_configuration": {
+                        "crop": "string|null",
+                        "algae": "string|null",
+                        "microbial": "string|null",
+                        "grow_system": "string|null",
+                    },
                 },
             },
         }
         return (
-            "You are the critic, explainer, tradeoff analyzer, and improvement suggester for a deterministic "
-            "closed-loop mission decision engine. The deterministic result is authoritative. "
+            "You are the summary rewriter, critic, explainer, tradeoff analyzer, and improvement suggester for a "
+            "deterministic closed-loop mission decision engine. The deterministic result is authoritative. "
             "You must NOT score candidates, rescore candidates, replace the decision engine, or invent a new "
-            "selection workflow. Your job is to analyze the already-selected deterministic configuration.\n\n"
+            "selection workflow. Your job is to rewrite concise UI-ready summaries and analyze the already-selected "
+            "deterministic configuration.\n\n"
+            "Optimize for low token usage, low verbosity, concise outputs, and no repetition.\n\n"
             "Focus on:\n"
-            "1. Why the deterministic configuration makes sense.\n"
-            "2. Weak links and loop gaps.\n"
-            "3. Improvements that preserve deterministic-first architecture.\n"
-            "4. One alternative configuration idea.\n"
-            "5. One second-pass recommendation object.\n"
-            "6. Crop vs algae vs microbial roles separately.\n"
-            "7. Mission resilience under constraints and crisis events when state or event data is present.\n\n"
+            "1. Rewrite concise UI notes for crop, algae, and microbial cards based only on deterministic facts.\n"
+            "2. Write a short executive summary of the integrated stack.\n"
+            "3. Write an adaptation summary only if the payload includes events, deltas, or state change context.\n"
+            "4. Explain why the deterministic configuration makes sense.\n"
+            "5. Identify weak links, tradeoffs, and improvements.\n"
+            "6. Provide one alternative configuration idea and one second-pass recommendation object.\n"
+            "7. Reason explicitly about crop vs algae vs microbial roles.\n"
+            "8. If state or event data exists, comment on resilience and degradation over time.\n\n"
+            "UI layer rules:\n"
+            "- Keep each card note to 1-3 short sentences.\n"
+            "- Preserve technical truth from deterministic data.\n"
+            "- Do not invent unsupported claims.\n"
+            "- Keep executive_summary and adaptation_summary concise.\n\n"
             "Return ONLY valid JSON. Do not include markdown, code fences, commentary, or prose outside JSON. "
-            "If a value is unknown, use an empty list, null-like string field, or empty object as appropriate.\n\n"
+            "All keys must exist. If a value is not relevant, use an empty string, empty list, or empty object.\n\n"
             f"Expected JSON schema:\n{json.dumps(schema, ensure_ascii=True, indent=2)}\n\n"
             f"Deterministic payload:\n{json.dumps(payload, ensure_ascii=True, indent=2)}"
         )

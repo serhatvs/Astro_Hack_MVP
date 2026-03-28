@@ -11,7 +11,7 @@ from app.core.simulation import MissionEvents
 from app.engine.integration_engine import IntegrationEngine
 from app.engine.types import IntegratedResult
 from app.models.mission import Environment, MissionProfile
-from app.models.response import LLMAnalysis, RecommendationResponse
+from app.models.response import GeminiNarrative, LLMAnalysis, RecommendationResponse, UIEnhancedNarrative
 from app.models.system import GrowingSystem
 from app.services.data_provider import DataProvider
 
@@ -52,8 +52,9 @@ class ReasoningLoop:
         events: MissionEvents | Mapping[str, Any] | None = None,
         deltas: Mapping[str, Any] | None = None,
         allow_refinement: bool = True,
-    ) -> tuple[IntegratedResult, list[Any], GrowingSystem, LLMAnalysis]:
-        llm_analysis = self._analyze_result(
+        invoke_gemini: bool = True,
+    ) -> tuple[IntegratedResult, list[Any], GrowingSystem, GeminiNarrative]:
+        narrative = self._analyze_result(
             source=source,
             mission=mission,
             result=result,
@@ -64,28 +65,29 @@ class ReasoningLoop:
             events=events,
             deltas=deltas,
             allow_refinement=allow_refinement,
+            invoke_gemini=invoke_gemini,
         )
 
         if not allow_refinement or self.max_iterations < 2:
-            llm_analysis = self._ensure_second_pass(
-                llm_analysis,
+            narrative = self._ensure_second_pass(
+                narrative,
                 source=source,
                 selected_configuration=self._selected_configuration(result, grow_system.name),
                 decision="retain",
                 reason="Critique-only mode kept the deterministic configuration without rerunning selection.",
             )
-            return result, top_crop_rankings, grow_system, llm_analysis
+            return result, top_crop_rankings, grow_system, narrative
 
-        refinement = self._derive_refinement(llm_analysis, mission, result)
+        refinement = self._derive_refinement(narrative.debug_layer, mission, result)
         if refinement is None:
-            llm_analysis = self._ensure_second_pass(
-                llm_analysis,
+            narrative = self._ensure_second_pass(
+                narrative,
                 source=source,
                 selected_configuration=self._selected_configuration(result, grow_system.name),
                 decision="retain",
                 reason="The deterministic configuration remained acceptable after critique.",
             )
-            return result, top_crop_rankings, grow_system, llm_analysis
+            return result, top_crop_rankings, grow_system, narrative
 
         rerun_result, rerun_crops, rerun_grow_system = self.integration_engine.select_configuration(
             mission=mission,
@@ -96,26 +98,36 @@ class ReasoningLoop:
         )
 
         if rerun_result.integrated_score > result.integrated_score + 0.02:
-            llm_analysis.second_pass = {
-                "decision": "refine",
-                "rationale": "A second deterministic pass improved the integrated score after critique.",
-                "applied_adjustments": refinement,
-                "selected_configuration": self._selected_configuration(
-                    rerun_result,
-                    rerun_grow_system.name,
-                ),
-            }
-            llm_analysis.second_pass_decision = dict(llm_analysis.second_pass)
-            return rerun_result, rerun_crops, rerun_grow_system, llm_analysis
+            updated_debug = narrative.debug_layer.model_copy(
+                update={
+                    "second_pass": {
+                        "decision": "refine",
+                        "rationale": "A second deterministic pass improved the integrated score after critique.",
+                        "applied_adjustments": refinement,
+                        "selected_configuration": self._selected_configuration(
+                            rerun_result,
+                            rerun_grow_system.name,
+                        ),
+                    }
+                }
+            )
+            updated_debug.second_pass_decision = dict(updated_debug.second_pass)
+            narrative = narrative.model_copy(update={"debug_layer": updated_debug})
+            return rerun_result, rerun_crops, rerun_grow_system, narrative
 
-        llm_analysis.second_pass = {
-            "decision": "retain",
-            "rationale": "The second deterministic pass did not outperform the baseline configuration.",
-            "applied_adjustments": refinement,
-            "selected_configuration": self._selected_configuration(result, grow_system.name),
-        }
-        llm_analysis.second_pass_decision = dict(llm_analysis.second_pass)
-        return result, top_crop_rankings, grow_system, llm_analysis
+        updated_debug = narrative.debug_layer.model_copy(
+            update={
+                "second_pass": {
+                    "decision": "retain",
+                    "rationale": "The second deterministic pass did not outperform the baseline configuration.",
+                    "applied_adjustments": refinement,
+                    "selected_configuration": self._selected_configuration(result, grow_system.name),
+                }
+            }
+        )
+        updated_debug.second_pass_decision = dict(updated_debug.second_pass)
+        narrative = narrative.model_copy(update={"debug_layer": updated_debug})
+        return result, top_crop_rankings, grow_system, narrative
 
     def analyze_response(
         self,
@@ -126,8 +138,9 @@ class ReasoningLoop:
         previous_state: MissionState | Mapping[str, Any] | None = None,
         events: MissionEvents | Mapping[str, Any] | None = None,
         deltas: Mapping[str, Any] | None = None,
-    ) -> LLMAnalysis:
-        llm_analysis = self._analyze_payload(
+        invoke_gemini: bool = True,
+    ) -> GeminiNarrative:
+        narrative = self._analyze_payload(
             source=source,
             mission=response.mission_profile,
             selected_roles=self._selected_roles_from_response(response),
@@ -137,9 +150,10 @@ class ReasoningLoop:
             previous_state=previous_state or (previous_recommendation.mission_state if previous_recommendation else None),
             events=events,
             deltas=deltas,
+            invoke_gemini=invoke_gemini,
         )
         return self._ensure_second_pass(
-            llm_analysis,
+            narrative,
             source=source,
             selected_configuration={
                 "crop": response.selected_system.crop.name,
@@ -164,7 +178,8 @@ class ReasoningLoop:
         events: MissionEvents | Mapping[str, Any] | None,
         deltas: Mapping[str, Any] | None,
         allow_refinement: bool,
-    ) -> LLMAnalysis:
+        invoke_gemini: bool,
+    ) -> GeminiNarrative:
         return self._analyze_payload(
             source=source,
             mission=mission,
@@ -178,6 +193,7 @@ class ReasoningLoop:
                 **(dict(deltas or {})),
                 "allow_refinement": allow_refinement,
             },
+            invoke_gemini=invoke_gemini,
         )
 
     def _analyze_payload(
@@ -192,7 +208,8 @@ class ReasoningLoop:
         previous_state: MissionState | Mapping[str, Any] | None,
         events: MissionEvents | Mapping[str, Any] | None,
         deltas: Mapping[str, Any] | None,
-    ) -> LLMAnalysis:
+        invoke_gemini: bool,
+    ) -> GeminiNarrative:
         payload = self._build_llm_payload(
             source=source,
             mission=mission,
@@ -204,7 +221,7 @@ class ReasoningLoop:
             events=events,
             deltas=deltas,
         )
-        fallback = self._build_rule_based_analysis(
+        fallback = self._build_rule_based_narrative(
             source=source,
             mission=mission,
             selected_roles=selected_roles,
@@ -216,11 +233,24 @@ class ReasoningLoop:
             deltas=deltas,
         )
 
-        gemini_analysis = self.gemini_client.analyze(payload)
-        if gemini_analysis is not None:
-            return gemini_analysis
+        if not invoke_gemini:
+            logger.info("Gemini skipped for source=%s; using deterministic ui/debug narrative.", source)
+            return fallback
 
-        logger.info("Using deterministic fallback llm_analysis for source=%s.", source)
+        gemini_narrative = self.gemini_client.analyze(
+            payload,
+            fallback_ui=fallback.ui_layer.model_dump(mode="json"),
+            default_reasoning=fallback.debug_layer.reasoning_summary,
+        )
+        if gemini_narrative is not None:
+            logger.info(
+                "Gemini narrative available for source=%s: %s",
+                source,
+                gemini_narrative.debug_layer.reasoning_summary,
+            )
+            return gemini_narrative
+
+        logger.info("Using deterministic fallback llm/ui narrative for source=%s.", source)
         return fallback
 
     def _build_llm_payload(
@@ -259,7 +289,7 @@ class ReasoningLoop:
             "deltas": dict(deltas or {}),
         }
 
-    def _build_rule_based_analysis(
+    def _build_rule_based_narrative(
         self,
         *,
         source: str,
@@ -271,7 +301,7 @@ class ReasoningLoop:
         previous_state: MissionState | Mapping[str, Any] | None,
         events: MissionEvents | Mapping[str, Any] | None,
         deltas: Mapping[str, Any] | None,
-    ) -> LLMAnalysis:
+    ) -> GeminiNarrative:
         crop_name = self._role_name(selected_roles, "crop")
         algae_name = self._role_name(selected_roles, "algae")
         microbial_name = self._role_name(selected_roles, "microbial")
@@ -346,7 +376,7 @@ class ReasoningLoop:
             "rationale": "This alternative reduces maintenance burden while preserving a workable closed-loop posture.",
         }
 
-        return LLMAnalysis.from_payload(
+        debug_layer = LLMAnalysis.from_payload(
             {
                 "reasoning_summary": reasoning_summary,
                 "weaknesses": weaknesses[:4],
@@ -365,6 +395,121 @@ class ReasoningLoop:
             },
             default_reasoning="Deterministic fallback analysis remains active.",
         )
+        ui_layer = self._build_rule_based_ui_layer(
+            source=source,
+            mission=mission,
+            selected_roles=selected_roles,
+            deterministic_explanations=deterministic_explanations,
+            deltas=deltas,
+            events=serialized_events,
+            fallback_reasoning=reasoning_summary,
+        )
+        return GeminiNarrative(ui_layer=ui_layer, debug_layer=debug_layer)
+
+    def _build_rule_based_ui_layer(
+        self,
+        *,
+        source: str,
+        mission: MissionProfile,
+        selected_roles: Mapping[str, Any],
+        deterministic_explanations: Mapping[str, Any] | None,
+        deltas: Mapping[str, Any] | None,
+        events: Mapping[str, Any],
+        fallback_reasoning: str,
+    ) -> UIEnhancedNarrative:
+        deltas = dict(deltas or {})
+        executive_summary = ""
+        if deterministic_explanations and isinstance(deterministic_explanations.get("executive_summary"), str):
+            executive_summary = str(deterministic_explanations["executive_summary"]).strip()
+        if not executive_summary:
+            executive_summary = fallback_reasoning
+
+        return UIEnhancedNarrative.from_payload(
+            {
+                "crop_note": self._build_domain_ui_note(selected_roles, "crop"),
+                "algae_note": self._build_domain_ui_note(selected_roles, "algae"),
+                "microbial_note": self._build_domain_ui_note(selected_roles, "microbial"),
+                "executive_summary": executive_summary,
+                "adaptation_summary": self._build_adaptation_ui_summary(
+                    source=source,
+                    mission=mission,
+                    deltas=deltas,
+                    events=events,
+                ),
+            }
+        )
+
+    def _build_domain_ui_note(self, selected_roles: Mapping[str, Any], role: str) -> str:
+        role_payload = selected_roles.get(role, {})
+        if not isinstance(role_payload, Mapping):
+            return ""
+
+        name = str(role_payload.get("name", role)).replace("_", " ").title()
+        role_description = str(role_payload.get("role", "")).strip()
+        support_system = role_payload.get("support_system")
+        notes = role_payload.get("notes")
+        note_text = ""
+        if isinstance(notes, list):
+            cleaned = []
+            for item in notes:
+                text = str(item).strip().rstrip(".")
+                if not text:
+                    continue
+                cleaned.append(text[0].upper() + text[1:] if len(text) > 1 else text.upper())
+            note_text = ". ".join(cleaned[:2]).strip()
+            if note_text:
+                note_text += "."
+
+        parts: list[str] = []
+        if role == "crop" and support_system:
+            support_label = str(support_system).replace("_", " ").title()
+            parts.append(f"{name} anchors {role_description} through the {support_label} plant layer.")
+        elif role_description:
+            parts.append(f"{name} covers {role_description}.")
+        else:
+            parts.append(f"{name} remains active in the {role} layer.")
+        if note_text:
+            parts.append(note_text)
+        return " ".join(parts[:2]).strip()
+
+    def _build_adaptation_ui_summary(
+        self,
+        *,
+        source: str,
+        mission: MissionProfile,
+        deltas: Mapping[str, Any],
+        events: Mapping[str, Any],
+    ) -> str:
+        if source == "recommend":
+            return ""
+        if source == "simulate":
+            change_event = events.get("change_event", "condition change")
+            previous_top = deltas.get("previous_top_crop")
+            new_top = deltas.get("new_top_crop")
+            previous_system = deltas.get("previous_system")
+            new_system = deltas.get("new_system")
+            risk_score_delta = deltas.get("risk_score_delta")
+            parts = [f"After {change_event}, the deterministic stack was re-evaluated for the {mission.environment.value} mission."]
+            if previous_top and new_top:
+                if previous_top == new_top:
+                    parts.append(f"{str(new_top).title()} stayed in the lead crop position.")
+                else:
+                    parts.append(f"Lead crop changed from {str(previous_top).title()} to {str(new_top).title()}.")
+            if previous_system and new_system and previous_system != new_system:
+                parts.append(f"The plant system shifted from {previous_system} to {new_system}.")
+            if isinstance(risk_score_delta, (int, float)):
+                direction = "increased" if risk_score_delta > 0 else "decreased" if risk_score_delta < 0 else "held steady"
+                parts.append(f"Overall mission-agriculture risk {direction}.")
+            return " ".join(parts[:3]).strip()
+        if source == "mission_step":
+            active_events = [name for name, value in events.items() if value is not None]
+            parts = [f"Mission state advanced with {', '.join(active_events) if active_events else 'no major events'}."]
+            if deltas.get("system_changes"):
+                parts.append("The biological loop adjusted its configuration to protect resilience.")
+            elif isinstance(deltas.get("risk_delta"), (int, float)):
+                parts.append("The biological loop held configuration while operational risk was updated.")
+            return " ".join(parts[:2]).strip()
+        return ""
 
     def _build_simulation_summary(
         self,
@@ -652,22 +797,29 @@ class ReasoningLoop:
 
     def _ensure_second_pass(
         self,
-        analysis: LLMAnalysis,
+        narrative: GeminiNarrative,
         *,
         source: str,
         selected_configuration: Mapping[str, Any],
         decision: str,
         reason: str,
-    ) -> LLMAnalysis:
+    ) -> GeminiNarrative:
+        analysis = narrative.debug_layer
         if analysis.second_pass:
-            analysis.second_pass_decision = dict(analysis.second_pass)
-            return analysis
+            updated_debug = analysis.model_copy(
+                update={"second_pass_decision": dict(analysis.second_pass)}
+            )
+            return narrative.model_copy(update={"debug_layer": updated_debug})
 
-        analysis.second_pass = {
-            "decision": decision,
-            "rationale": reason,
-            "source": source,
-            "selected_configuration": dict(selected_configuration),
-        }
-        analysis.second_pass_decision = dict(analysis.second_pass)
-        return analysis
+        updated_debug = analysis.model_copy(
+            update={
+                "second_pass": {
+                    "decision": decision,
+                    "rationale": reason,
+                    "source": source,
+                    "selected_configuration": dict(selected_configuration),
+                }
+            }
+        )
+        updated_debug.second_pass_decision = dict(updated_debug.second_pass)
+        return narrative.model_copy(update={"debug_layer": updated_debug})

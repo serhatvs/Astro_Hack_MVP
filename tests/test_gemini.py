@@ -12,7 +12,7 @@ from app.models.mission import (
     MissionConstraints,
     MissionProfile,
 )
-from app.models.response import LLMAnalysis, SimulationRequest
+from app.models.response import LLMAnalysis, SimulationRequest, UIEnhancedNarrative
 from app.services.data_provider import JSONDataProvider
 from app.services.recommender import RecommendationEngine
 
@@ -61,27 +61,47 @@ def test_llm_analysis_normalizes_missing_keys() -> None:
     assert analysis.second_pass_decision == {}
 
 
+def test_ui_enhanced_normalizes_missing_keys() -> None:
+    narrative = UIEnhancedNarrative.from_payload({"crop_note": "Plant layer stable."})
+
+    assert narrative.crop_note == "Plant layer stable."
+    assert narrative.algae_note == ""
+    assert narrative.microbial_note == ""
+    assert narrative.executive_summary == ""
+    assert narrative.adaptation_summary == ""
+
+
 def test_gemini_client_parses_fenced_json(monkeypatch) -> None:
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
     _install_fake_google(
         monkeypatch,
         """```json
         {
-          "reasoning_summary": "The deterministic stack is well balanced.",
-          "weaknesses": ["Microbial risk remains elevated."],
-          "alternative": {"crop": "spinach"}
+          "ui_layer": {
+            "crop_note": "Spinach stabilizes the food layer.",
+            "algae_note": "Spirulina supports oxygen and protein buffering.",
+            "microbial_note": "The bioreactor reinforces nutrient recovery.",
+            "executive_summary": "The closed-loop stack stays balanced.",
+            "adaptation_summary": ""
+          },
+          "debug_layer": {
+            "reasoning_summary": "The deterministic stack is well balanced.",
+            "weaknesses": ["Microbial risk remains elevated."],
+            "alternative": {"crop": "spinach"}
+          }
         }
         ```""",
     )
 
-    analysis = GeminiClient().analyze({"request_context": {"source": "recommend"}})
+    narrative = GeminiClient().analyze({"request_context": {"source": "recommend"}})
 
-    assert analysis is not None
-    assert analysis.reasoning_summary == "The deterministic stack is well balanced. -gemini"
-    assert analysis.weaknesses == ["Microbial risk remains elevated."]
-    assert analysis.improvements == []
-    assert analysis.alternative["crop"] == "spinach"
-    assert analysis.alternative_configuration == analysis.alternative
+    assert narrative is not None
+    assert narrative.ui_layer.crop_note == "Spinach stabilizes the food layer."
+    assert narrative.debug_layer.reasoning_summary == "The deterministic stack is well balanced. -gemini"
+    assert narrative.debug_layer.weaknesses == ["Microbial risk remains elevated."]
+    assert narrative.debug_layer.improvements == []
+    assert narrative.debug_layer.alternative["crop"] == "spinach"
+    assert narrative.debug_layer.alternative_configuration == narrative.debug_layer.alternative
 
 
 def test_gemini_client_returns_none_on_invalid_json(monkeypatch) -> None:
@@ -93,14 +113,15 @@ def test_gemini_client_returns_none_on_invalid_json(monkeypatch) -> None:
     assert analysis is None
 
 
-def test_recommend_payload_sent_to_gemini_includes_context() -> None:
+def test_recommend_payload_sent_to_gemini_includes_context(monkeypatch) -> None:
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     engine = RecommendationEngine(provider=JSONDataProvider())
 
     class CaptureGeminiClient:
         def __init__(self) -> None:
             self.payloads: list[dict] = []
 
-        def analyze(self, payload):
+        def analyze(self, payload, **kwargs):  # noqa: ARG002
             self.payloads.append(payload)
             return None
 
@@ -128,54 +149,60 @@ def test_recommend_payload_sent_to_gemini_includes_context() -> None:
     assert payload["selected_roles"]["algae"]["role"] == "oxygen and biomass support"
     assert payload["selected_roles"]["microbial"]["role"] == "waste recycling and nutrient conversion"
     assert "system_reasoning" in payload["deterministic_explanations"]
+    assert "interaction" in payload["scores"]
+    assert "ui_layer" not in payload
 
 
-def test_simulate_generates_delta_aware_llm_analysis() -> None:
+def test_simulate_generates_delta_aware_llm_analysis(monkeypatch) -> None:
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     engine = RecommendationEngine(provider=JSONDataProvider())
+    baseline = engine.recommend(_build_mission())
 
     class CaptureGeminiClient:
         def __init__(self) -> None:
             self.payloads: list[dict] = []
 
-        def analyze(self, payload):
+        def analyze(self, payload, **kwargs):  # noqa: ARG002
             self.payloads.append(payload)
             return None
 
     capture = CaptureGeminiClient()
     engine.reasoning_loop.gemini_client = capture
 
-    mission = _build_mission()
-    baseline = engine.recommend(mission)
     response = engine.simulate(
         SimulationRequest(
-            mission_profile=mission,
+            mission_profile=_build_mission(),
             change_event=ChangeEvent.WATER_DROP,
             previous_recommendation=baseline,
         )
     )
 
+    assert len(capture.payloads) == 1
     simulate_payload = capture.payloads[-1]
     assert simulate_payload["request_context"]["source"] == "simulate"
     assert simulate_payload["deltas"]["ranking_diff"] == response.ranking_diff
     assert simulate_payload["deltas"]["risk_score_delta"] == response.risk_score_delta
     assert "simulation update" in response.updated_recommendation.llm_analysis.reasoning_summary.lower()
+    assert response.updated_recommendation.ui_enhanced.adaptation_summary
+    assert response.updated_recommendation.ui_enhanced.crop_note
 
 
-def test_mission_step_generates_state_and_event_aware_llm_analysis() -> None:
+def test_mission_step_generates_state_and_event_aware_llm_analysis(monkeypatch) -> None:
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     engine = RecommendationEngine(provider=JSONDataProvider())
+    baseline = engine.recommend(_build_mission())
 
     class CaptureGeminiClient:
         def __init__(self) -> None:
             self.payloads: list[dict] = []
 
-        def analyze(self, payload):
+        def analyze(self, payload, **kwargs):  # noqa: ARG002
             self.payloads.append(payload)
             return None
 
     capture = CaptureGeminiClient()
     engine.reasoning_loop.gemini_client = capture
 
-    baseline = engine.recommend(_build_mission())
     response = engine.mission_step(
         MissionStepRequest(
             mission_id=baseline.mission_state.mission_id,
@@ -184,6 +211,7 @@ def test_mission_step_generates_state_and_event_aware_llm_analysis() -> None:
         )
     )
 
+    assert len(capture.payloads) == 1
     mission_step_payload = capture.payloads[-1]
     assert mission_step_payload["request_context"]["source"] == "mission_step"
     assert mission_step_payload["previous_state"] is not None
@@ -191,3 +219,5 @@ def test_mission_step_generates_state_and_event_aware_llm_analysis() -> None:
     assert mission_step_payload["events"]["contamination"] == 18.0
     assert mission_step_payload["deltas"]["risk_delta"] == response.risk_delta
     assert "mission step analysis" in response.llm_analysis.reasoning_summary.lower()
+    assert response.ui_enhanced.adaptation_summary
+    assert response.ui_enhanced.algae_note

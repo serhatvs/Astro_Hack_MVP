@@ -10,6 +10,7 @@ client = TestClient(app)
 
 def test_recommend_returns_top_three_sorted_with_ui_fields(monkeypatch) -> None:
     monkeypatch.delenv("AI_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     payload = {
         "environment": "mars",
         "duration": "long",
@@ -35,6 +36,9 @@ def test_recommend_returns_top_three_sorted_with_ui_fields(monkeypatch) -> None:
     assert data["mission_status"] in {"NOMINAL", "WATCH", "CRITICAL"}
     assert data["executive_summary"]
     assert data["operational_note"]
+    assert data["ui_enhanced"]["crop_note"]
+    assert data["ui_enhanced"]["algae_note"]
+    assert data["ui_enhanced"]["microbial_note"]
     assert len(data["top_crops"]) == 3
     assert data["top_crops"][0]["score"] >= data["top_crops"][1]["score"] >= data["top_crops"][2]["score"]
     assert all(item["reason"] for item in data["top_crops"])
@@ -47,7 +51,8 @@ def test_recommend_returns_top_three_sorted_with_ui_fields(monkeypatch) -> None:
     assert data["explanation"]
 
 
-def test_simulate_returns_ranking_diff_and_risk_delta() -> None:
+def test_simulate_returns_ranking_diff_and_risk_delta(monkeypatch) -> None:
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     payload = {
         "mission_profile": {
             "environment": "mars",
@@ -77,12 +82,14 @@ def test_simulate_returns_ranking_diff_and_risk_delta() -> None:
     assert data["new_top_crop"]
     assert len(data["updated_recommendation"]["top_crops"]) == 3
     assert data["updated_recommendation"]["executive_summary"]
+    assert data["updated_recommendation"]["ui_enhanced"]["adaptation_summary"]
     assert data["adaptation_summary"]
     assert data["reason"] == data["adaptation_summary"]
     assert data["adaptation_reason"] == data["adaptation_summary"]
 
 
-def test_simulate_yield_drop_with_affected_crop_returns_clear_diff() -> None:
+def test_simulate_yield_drop_with_affected_crop_returns_clear_diff(monkeypatch) -> None:
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     mission = {
         "environment": "moon",
         "duration": "long",
@@ -120,6 +127,7 @@ def test_simulate_yield_drop_with_affected_crop_returns_clear_diff() -> None:
 
 def test_openapi_and_requirements_have_no_external_ai_runtime_dependency(monkeypatch) -> None:
     monkeypatch.delenv("AI_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
 
     response = client.post(
         "/recommend",
@@ -173,9 +181,12 @@ def test_recommend_returns_stateful_multidomain_payload(monkeypatch) -> None:
     assert data["llm_analysis"]["reasoning_summary"]
     assert isinstance(data["llm_analysis"]["weaknesses"], list)
     assert "second_pass" in data["llm_analysis"]
+    assert data["ui_enhanced"]["executive_summary"]
+    assert "crop_note" in data["ui_enhanced"]
 
 
-def test_mission_step_updates_stored_state() -> None:
+def test_mission_step_updates_stored_state(monkeypatch) -> None:
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     baseline = client.post(
         "/recommend",
         json={
@@ -211,5 +222,6 @@ def test_mission_step_updates_stored_state() -> None:
     assert data["mission_state"]["resources"]["water"] < mission_state["resources"]["water"]
     assert len(data["mission_state"]["history"]) >= 2
     assert data["adaptation_summary"]
+    assert data["ui_enhanced"]["adaptation_summary"]
     assert isinstance(data["system_changes"], list)
     assert isinstance(data["risk_delta"], float)
