@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.mission import Environment
 
@@ -20,5 +20,18 @@ class MicrobialSystem(BaseModel):
     reactor_dependency: float
     environmental_sensitivity: float
     maintenance_burden: float
-    preferred_environments: list[Environment]
+    preferred_environments: list[str]
+    mission_environments: list[Environment] = Field(default_factory=list)
     notes: str
+
+    def environment_fit_score(self, environment: Environment, fallback: float = 0.72) -> float:
+        """Return explicit environment fit when available, otherwise a neutral fallback."""
+
+        if not self.mission_environments:
+            return fallback
+        return 1.0 if environment in self.mission_environments else 0.6
+
+    def prefers_environment(self, environment: Environment) -> bool:
+        """Check whether the microbial system explicitly targets the mission environment."""
+
+        return environment in self.mission_environments

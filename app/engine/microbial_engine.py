@@ -76,7 +76,7 @@ class MicrobialEngine:
         normalized: dict[str, float],
         mission: MissionProfile,
     ) -> float:
-        environment_fit = 1.0 if mission.environment in system.preferred_environments else 0.60
+        environment_fit = system.environment_fit_score(mission.environment, fallback=0.72)
 
         goal_fit = {
             Goal.BALANCED: (
@@ -120,7 +120,7 @@ class MicrobialEngine:
         normalized: dict[str, float],
         mission: MissionProfile,
     ) -> float:
-        mismatch_penalty = 0.0 if mission.environment in system.preferred_environments else 0.18
+        mismatch_penalty = 0.18 * (1 - system.environment_fit_score(mission.environment, fallback=0.72))
         return max(
             0.0,
             min(

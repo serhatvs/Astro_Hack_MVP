@@ -1,38 +1,77 @@
 [
   {
-    "name": "nitrifying_bioreactor",
-    "waste_recycling_efficiency": 86,
-    "nutrient_conversion_capability": 92,
-    "loop_closure_contribution": 88,
-    "contamination_risk": 34,
-    "reactor_dependency": 62,
-    "environmental_sensitivity": 48,
-    "maintenance_burden": 44,
-    "preferred_environments": ["mars", "moon", "iss"],
-    "notes": "Strong nutrient reconversion pathway that supports stable fertilizer recovery with moderate reactor dependence."
+    "name": "Cupriavidus necator",
+    "waste_recycling_efficiency": 95,
+    "nutrient_conversion_capability": 90,
+    "loop_closure_contribution": 100,
+    "contamination_risk": 85,
+    "reactor_dependency": 100,
+    "environmental_sensitivity": 95,
+    "maintenance_burden": 90,
+    "preferred_environments": [
+      "C1-Substrat Reaktorleri",
+      "Yuksek H2/CO2 Karisimli Gaz Odalari"
+    ],
+    "notes": "Atik C1 karbonunu devasa oranlarda biyoplastige (PHB) donusturerek donguyu muazzam kapatir. Ancak reaktor gaz dengesine (H2/O2) asiri bagimlidir; ufak bir gaz sapmasi tum kulturun aninda cokmesine neden olur."
   },
   {
-    "name": "anaerobic_digester",
-    "waste_recycling_efficiency": 90,
-    "nutrient_conversion_capability": 84,
-    "loop_closure_contribution": 86,
-    "contamination_risk": 46,
-    "reactor_dependency": 74,
-    "environmental_sensitivity": 58,
-    "maintenance_burden": 56,
-    "preferred_environments": ["mars", "moon"],
-    "notes": "High recycling throughput and loop value, but operational burden and contamination exposure are higher."
+    "name": "Saccharomyces boulardii",
+    "waste_recycling_efficiency": 50,
+    "nutrient_conversion_capability": 60,
+    "loop_closure_contribution": 55,
+    "contamination_risk": 30,
+    "reactor_dependency": 45,
+    "environmental_sensitivity": 35,
+    "maintenance_burden": 40,
+    "preferred_environments": [
+      "Kurutulmus Staz Kutulari",
+      "Sivi Hidrasyon Paketleri"
+    ],
+    "notes": "Ortalama bir atik donusturucusudur ancak asil gucu dayanikliligindadir. Kotu kosullarda bile sorun cikarmaz, murettebati radyasyon ve bagirsak sorunlarina karsi korumak icin ilimli bir maliyet-fayda sunar."
   },
   {
-    "name": "biofilm_polisher",
-    "waste_recycling_efficiency": 72,
-    "nutrient_conversion_capability": 78,
-    "loop_closure_contribution": 74,
-    "contamination_risk": 24,
-    "reactor_dependency": 40,
-    "environmental_sensitivity": 30,
-    "maintenance_burden": 28,
-    "preferred_environments": ["iss", "moon"],
-    "notes": "Low-burden microbial polishing loop that trades peak closure for simpler station operations."
+    "name": "Pseudomonas putida",
+    "waste_recycling_efficiency": 100,
+    "nutrient_conversion_capability": 85,
+    "loop_closure_contribution": 90,
+    "contamination_risk": 90,
+    "reactor_dependency": 80,
+    "environmental_sensitivity": 85,
+    "maintenance_burden": 95,
+    "preferred_environments": [
+      "Bitki Rizosferi",
+      "VOC Biyofiltre Sistemleri"
+    ],
+    "notes": "Zehirli ve ucucu organikleri (VOC) parcalamada benzersiz bir performans gosterir. Buna karsilik cok agresiftir; rizosferde kontrol edilemezse bitkilerin diger faydali kok mantarlarini da yok edip sisteme hasar verme riski buyuktur."
+  },
+  {
+    "name": "Methylobacterium extorquens",
+    "waste_recycling_efficiency": 35,
+    "nutrient_conversion_capability": 30,
+    "loop_closure_contribution": 40,
+    "contamination_risk": 15,
+    "reactor_dependency": 20,
+    "environmental_sensitivity": 15,
+    "maintenance_burden": 20,
+    "preferred_environments": [
+      "Metanol Bakimindan Zengin Ortamlar",
+      "Bitki Yuzeyleri (Fillosfer)"
+    ],
+    "notes": "Neredeyse hic ozel reaktor veya bakim istemez, ekstrem sartlarda yavas yavas metanol atiklarini tuketir. Cok risksizdir ancak dongusel sisteme (loop closure) katkisi oldukca dusuk ve yavastir."
+  },
+  {
+    "name": "Bacillus subtilis",
+    "waste_recycling_efficiency": 15,
+    "nutrient_conversion_capability": 10,
+    "loop_closure_contribution": 15,
+    "contamination_risk": 10,
+    "reactor_dependency": 10,
+    "environmental_sensitivity": 10,
+    "maintenance_burden": 10,
+    "preferred_environments": [
+      "Dondurulmus/Kurutulmus Durum",
+      "Atik Curutme Modullerinin Tabani"
+    ],
+    "notes": "Atik geri donusum kapasitesi en dusuk turdur ve sistemin ana yukunu asla tasiyamaz. Gorevi verim degil garantidir; uzay radyasyonuna ve vakuma dayanikli sporlari sayesinde BLSS tamamen cokse bile hayatta kalip sistemi yeniden baslatma sigortasi sunar."
   }
 ]

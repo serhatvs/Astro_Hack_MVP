@@ -88,8 +88,8 @@ class Explainer:
         selected_system: GrowingSystem,
     ) -> float:
         crop = scored_crop.crop
-        system_fit = 1.0 if selected_system.name in crop.compatible_systems else 0.0
-        environment_fit = 1.0 if mission.environment in crop.preferred_environments else 0.65
+        system_fit = crop.system_fit_score(selected_system.name, fallback=0.72)
+        environment_fit = crop.environment_fit_score(mission.environment, fallback=0.72)
         closed_loop_fit = (
             crop.nutrient_density
             + crop.oxygen_contribution
@@ -135,7 +135,7 @@ class Explainer:
 
         reason = templates.get(primary_strength, "The crop matches the active mission priorities.")
 
-        if mission.environment in scored_crop.crop.preferred_environments:
+        if scored_crop.crop.prefers_environment(mission.environment):
             return reason[:-1] + f" and it aligns well with {environment_label} mission conditions."
 
         if mission.constraints.water is ConstraintLevel.LOW and selected_system.name == "aeroponic":

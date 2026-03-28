@@ -109,8 +109,8 @@ class CropEngine:
         mission: MissionProfile,
         grow_system: GrowingSystem,
     ) -> float:
-        environment_fit = 1.0 if mission.environment in crop.preferred_environments else 0.6
-        system_fit = 1.0 if grow_system.name in crop.compatible_systems else 0.55
+        environment_fit = crop.environment_fit_score(mission.environment, fallback=0.72)
+        system_fit = crop.system_fit_score(grow_system.name, fallback=0.72)
 
         goal_fit = {
             Goal.BALANCED: (
@@ -162,8 +162,8 @@ class CropEngine:
         mission: MissionProfile,
         grow_system: GrowingSystem,
     ) -> float:
-        mismatch_penalty = 0.0 if mission.environment in crop.preferred_environments else 0.18
-        system_penalty = 0.0 if grow_system.name in crop.compatible_systems else 0.20
+        mismatch_penalty = 0.18 * (1 - crop.environment_fit_score(mission.environment, fallback=0.72))
+        system_penalty = 0.20 * (1 - crop.system_fit_score(grow_system.name, fallback=0.72))
         return max(
             0.0,
             min(
@@ -179,7 +179,7 @@ class CropEngine:
 
     def _notes(self, crop: Crop, mission: MissionProfile, grow_system: GrowingSystem) -> list[str]:
         notes: list[str] = []
-        if mission.environment in crop.preferred_environments:
+        if crop.prefers_environment(mission.environment):
             notes.append("aligned with the mission environment")
         if crop.closed_loop_score >= 0.72:
             notes.append("supports closed-loop nutrient and gas recovery")

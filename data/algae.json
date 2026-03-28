@@ -1,41 +1,82 @@
 [
   {
-    "name": "spirulina_loop",
-    "oxygen_contribution": 88,
-    "co2_utilization": 92,
+    "name": "Chlorella vulgaris",
+    "oxygen_contribution": 95,
+    "co2_utilization": 98,
     "biomass_production": 90,
-    "protein_potential": 94,
-    "photobioreactor_compatibility": 82,
-    "water_system_compatibility": 84,
-    "energy_light_dependency": 68,
-    "maintenance_complexity": 62,
-    "preferred_environments": ["mars", "moon", "iss"],
-    "notes": "High-biomass cyanobacteria loop with strong oxygen and protein output, but elevated monitoring needs."
+    "protein_potential": 85,
+    "photobioreactor_compatibility": 90,
+    "water_system_compatibility": 80,
+    "energy_light_dependency": 95,
+    "maintenance_complexity": 90,
+    "preferred_environments": [
+      "Yuksek PAR Isikli Fotobiyoreaktor (PBR)",
+      "Aktif Atiksu Donguleri"
+    ],
+    "notes": "O2 ve biyokutle uretiminde muazzamdir ancak cok yuksek aydinlatma (enerji) ve araliksiz reaktor bakimi gerektirir. Bakim aksarsa sistemde tikanmalara (biofouling) yol acip cokmeye neden olma riski kritik seviyededir."
   },
   {
-    "name": "chlorella_panel",
-    "oxygen_contribution": 82,
-    "co2_utilization": 86,
-    "biomass_production": 78,
-    "protein_potential": 80,
-    "photobioreactor_compatibility": 88,
-    "water_system_compatibility": 76,
-    "energy_light_dependency": 58,
-    "maintenance_complexity": 48,
-    "preferred_environments": ["moon", "iss"],
-    "notes": "Stable algae panel with balanced oxygen support and manageable maintenance complexity."
+    "name": "Arthrospira platensis (Spirulina)",
+    "oxygen_contribution": 60,
+    "co2_utilization": 65,
+    "biomass_production": 70,
+    "protein_potential": 95,
+    "photobioreactor_compatibility": 75,
+    "water_system_compatibility": 40,
+    "energy_light_dependency": 60,
+    "maintenance_complexity": 55,
+    "preferred_environments": [
+      "Yuksek Alkali Havuzlar (pH 10-12)",
+      "Yari Kontrollu Sistemler"
+    ],
+    "notes": "Protein potansiyeli olaganustudur fakat sadece ekstrem alkali ortamlarda verimli olur. Bu durum standart su geri kazanim sistemleriyle entegrasyonunu zorlastirir; orta halli bir risk-odul dengesi sunar."
   },
   {
-    "name": "scenedesmus_reserve",
-    "oxygen_contribution": 74,
-    "co2_utilization": 80,
-    "biomass_production": 72,
-    "protein_potential": 70,
-    "photobioreactor_compatibility": 76,
-    "water_system_compatibility": 90,
-    "energy_light_dependency": 46,
-    "maintenance_complexity": 38,
-    "preferred_environments": ["moon", "iss"],
-    "notes": "Lower-complexity reserve algae line optimized for water coupling and operational steadiness."
+    "name": "Anabaena cylindrica",
+    "oxygen_contribution": 25,
+    "co2_utilization": 30,
+    "biomass_production": 20,
+    "protein_potential": 45,
+    "photobioreactor_compatibility": 85,
+    "water_system_compatibility": 95,
+    "energy_light_dependency": 20,
+    "maintenance_complexity": 15,
+    "preferred_environments": [
+      "Dusuk Basincli Ortamlar",
+      "Regolit Karisimli Fakir Sular"
+    ],
+    "notes": "Azot baglama yetenegiyle neredeyse hic bakim ve enerji istemeyen bir hayatta kalma ustasidir. Ancak urettigi O2 ve biyokutle miktari sistemin genel ihtiyaclarini karsilamayacak kadar dusuktur."
+  },
+  {
+    "name": "Synechocystis sp.",
+    "oxygen_contribution": 85,
+    "co2_utilization": 100,
+    "biomass_production": 85,
+    "protein_potential": 50,
+    "photobioreactor_compatibility": 65,
+    "water_system_compatibility": 50,
+    "energy_light_dependency": 90,
+    "maintenance_complexity": 95,
+    "preferred_environments": [
+      "Yuksek CO2 Atmosferi",
+      "Modifiye Edilmis Biyoreaktorler"
+    ],
+    "notes": "Atmosferik CO2'yi sistemden silip supurme kapasitesi %100'dur fakat genetik instabilite riski cok yuksektir. En ufak bir cevresel sapmada kulturun tamamen olme ihtimali devasa bir risk yaratir."
+  },
+  {
+    "name": "Dunaliella salina",
+    "oxygen_contribution": 40,
+    "co2_utilization": 45,
+    "biomass_production": 35,
+    "protein_potential": 15,
+    "photobioreactor_compatibility": 60,
+    "water_system_compatibility": 10,
+    "energy_light_dependency": 85,
+    "maintenance_complexity": 45,
+    "preferred_environments": [
+      "Asiri Tuzlu Su (Hipersalin) Sistemleri",
+      "Yuksek Isima/Radyasyon Alanlari"
+    ],
+    "notes": "O2 veya biyokutle verimi cok kotudur ve standart su sistemlerini tuzlulugu ile mahvedebilir. Buna karsin, murettebatin radyasyon hasarini onaracak yuksek degerli beta-karoteni sadece bu tur uretebilir."
   }
 ]

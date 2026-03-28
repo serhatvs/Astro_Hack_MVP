@@ -10,7 +10,7 @@ from app.models.system import GrowingSystem
 def filter_compatible_crops(crops: list[Crop], system: GrowingSystem) -> list[Crop]:
     """Keep only crops compatible with the selected growing system."""
 
-    return [crop for crop in crops if system.name in crop.compatible_systems]
+    return [crop for crop in crops if crop.system_fit_score(system.name) >= 0.6]
 
 
 def mission_has_constrained_resources(mission: MissionProfile) -> bool:
@@ -30,7 +30,7 @@ def compute_rule_adjustment(crop: Crop, mission: MissionProfile) -> tuple[float,
     adjustment = 0.0
     notes: list[str] = []
 
-    if mission.environment in crop.preferred_environments:
+    if crop.prefers_environment(mission.environment):
         adjustment += 0.05
         notes.append("environment-fit")
 
@@ -51,4 +51,3 @@ def compute_rule_adjustment(crop: Crop, mission: MissionProfile) -> tuple[float,
         notes.append("water-efficiency-bonus")
 
     return adjustment, notes
-
