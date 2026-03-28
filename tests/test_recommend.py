@@ -196,6 +196,82 @@ def test_recommend_returns_stateful_multidomain_payload(monkeypatch) -> None:
     assert "crop_note" in data["ui_enhanced"]
 
 
+def test_initial_risk_is_fairly_calibrated_by_constraints_and_duration(monkeypatch) -> None:
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+    low_response = client.post(
+        "/simulation/start",
+        json={
+            "mission_profile": {
+                "environment": "moon",
+                "duration": "short",
+                "constraints": {
+                    "water": "low",
+                    "energy": "low",
+                    "area": "low",
+                },
+                "goal": "balanced",
+            },
+            "selected_crop": "Lactuca sativa (Marul)",
+            "selected_algae": "Chlorella vulgaris",
+            "selected_microbial": "Saccharomyces boulardii",
+        },
+    )
+    assert low_response.status_code == 200
+    low_data = low_response.json()
+
+    medium_response = client.post(
+        "/simulation/start",
+        json={
+            "mission_profile": {
+                "environment": "mars",
+                "duration": "medium",
+                "constraints": {
+                    "water": "medium",
+                    "energy": "medium",
+                    "area": "medium",
+                },
+                "goal": "balanced",
+            },
+            "selected_crop": "Lactuca sativa (Marul)",
+            "selected_algae": "Chlorella vulgaris",
+            "selected_microbial": "Saccharomyces boulardii",
+        },
+    )
+    assert medium_response.status_code == 200
+    medium_data = medium_response.json()
+
+    high_response = client.post(
+        "/simulation/start",
+        json={
+            "mission_profile": {
+                "environment": "mars",
+                "duration": "long",
+                "constraints": {
+                    "water": "high",
+                    "energy": "high",
+                    "area": "high",
+                },
+                "goal": "balanced",
+            },
+            "selected_crop": "Lactuca sativa (Marul)",
+            "selected_algae": "Chlorella vulgaris",
+            "selected_microbial": "Saccharomyces boulardii",
+        },
+    )
+    assert high_response.status_code == 200
+    high_data = high_response.json()
+
+    low_risk = low_data["mission_state"]["system_metrics"]["risk_level"] / 100
+    medium_risk = medium_data["mission_state"]["system_metrics"]["risk_level"] / 100
+    high_risk = high_data["mission_state"]["system_metrics"]["risk_level"] / 100
+
+    assert 0.10 <= low_risk <= 0.25
+    assert 0.25 <= medium_risk <= 0.45
+    assert 0.45 <= high_risk <= 0.65
+    assert low_risk < medium_risk < high_risk
+
+
 def test_simulation_start_bootstraps_selected_stack(monkeypatch) -> None:
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     baseline = client.post(

@@ -31,7 +31,15 @@ from app.engine.crop_engine import ALGAE_LIKE_NAMES
 from app.engine.integration_engine import IntegrationEngine
 from app.llm.reasoning_loop import ReasoningLoop
 from app.models.demo_case import DemoCase
-from app.models.mission import ChangeEvent, ConstraintLevel, MissionConstraints, MissionProfile, downgrade_constraint
+from app.models.mission import (
+    ChangeEvent,
+    ConstraintLevel,
+    Duration,
+    Environment,
+    MissionConstraints,
+    MissionProfile,
+    downgrade_constraint,
+)
 from app.models.response import (
     CropRecommendation,
     DomainScoreBundle,
@@ -43,7 +51,9 @@ from app.models.response import (
     RecommendationResponse,
     RankedCandidatesBundle,
     RankedDomainCandidate,
+    RiskAnalysis,
     RiskDelta,
+    RiskLevel,
     ScoreBundle,
     SimulationStartRequest,
     SimulationStartResponse,
@@ -558,6 +568,13 @@ class RecommendationEngine:
             if lead_crop_compatibility_override is not None
             else (crop_recommendations[0].compatibility_score if crop_recommendations else 0.5)
         )
+        if existing_state is None:
+            risk_analysis = self._build_initial_risk_analysis(
+                mission=mission,
+                integrated_result=integrated_result,
+                lead_crop_compatibility=lead_crop_compatibility,
+                base_analysis=risk_analysis,
+            )
         mission_status = self.explainer.build_mission_status(
             mission=mission,
             risk_analysis=risk_analysis,
@@ -741,6 +758,122 @@ class RecommendationEngine:
             / 4,
             3,
         )
+
+    def _build_initial_risk_analysis(
+        self,
+        *,
+        mission: MissionProfile,
+        integrated_result,
+        lead_crop_compatibility: float,
+        base_analysis,
+    ) -> RiskAnalysis:
+        constraint_pressure = (
+            self._constraint_severity(mission.constraints.water)
+            + self._constraint_severity(mission.constraints.energy)
+            + self._constraint_severity(mission.constraints.area)
+        ) / 3
+        duration_pressure = {
+            Duration.SHORT: 0.02,
+            Duration.MEDIUM: 0.06,
+            Duration.LONG: 0.10,
+        }[mission.duration]
+        environment_pressure = {
+            Environment.ISS: 0.03,
+            Environment.MOON: 0.05,
+            Environment.MARS: 0.07,
+        }[mission.environment]
+
+        algae_support = (
+            integrated_result.algae.candidate.oxygen_contribution
+            + integrated_result.algae.candidate.co2_utilization
+            + integrated_result.algae.candidate.biomass_production
+        ) / 300
+        microbial_support = (
+            integrated_result.microbial.candidate.waste_recycling_efficiency
+            + integrated_result.microbial.candidate.nutrient_conversion_capability
+            + integrated_result.microbial.candidate.loop_closure_contribution
+        ) / 300
+        average_domain_risk = (
+            integrated_result.crop.risk_score
+            + integrated_result.algae.risk_score
+            + integrated_result.microbial.risk_score
+        ) / 3
+        mismatch_pressure = 0.15 * (1 - lead_crop_compatibility)
+        domain_pressure = 0.10 * average_domain_risk
+        interaction_pressure = (
+            0.08 * integrated_result.interaction.conflict_score
+            + 0.06 * integrated_result.interaction.complexity_penalty
+            + 0.04 * integrated_result.interaction.resource_overlap
+        )
+        stabilizer_bonus = (
+            0.08 * algae_support
+            + 0.08 * microbial_support
+            + 0.05 * integrated_result.interaction.synergy_score
+            + 0.03 * lead_crop_compatibility
+        )
+
+        score = round(
+            max(
+                0.05,
+                min(
+                    0.65,
+                    0.10
+                    + constraint_pressure
+                    + duration_pressure
+                    + environment_pressure
+                    + mismatch_pressure
+                    + domain_pressure
+                    + interaction_pressure
+                    - stabilizer_bonus,
+                ),
+            ),
+            3,
+        )
+
+        if score >= 0.45:
+            level = RiskLevel.HIGH
+        elif score >= 0.25:
+            level = RiskLevel.MODERATE
+        else:
+            level = RiskLevel.LOW
+
+        factors: list[str] = []
+        if constraint_pressure <= 0.04:
+            factors.append("light starting resource constraints keep the baseline manageable")
+        elif constraint_pressure >= 0.16:
+            factors.append("tight starting mission constraints raise the initial operating pressure")
+        else:
+            factors.append("moderate starting constraints create a watch-level operating load")
+
+        if mission.duration is Duration.LONG:
+            factors.append("long mission duration adds sustained planning pressure from the start")
+        elif mission.duration is Duration.MEDIUM:
+            factors.append("medium mission duration adds moderate starting pressure")
+        else:
+            factors.append("short mission horizon limits the opening exposure window")
+
+        if lead_crop_compatibility >= 0.78 and algae_support >= 0.70 and microbial_support >= 0.55:
+            factors.append("the integrated crop, algae, and microbial stack provides stabilizing support")
+        elif lead_crop_compatibility < 0.60 or average_domain_risk >= 0.45:
+            factors.append("stack fit and biological support leave less recovery margin at startup")
+        elif base_analysis.factors:
+            factors.extend(base_analysis.factors[:1])
+
+        return base_analysis.model_copy(
+            update={
+                "score": score,
+                "level": level,
+                "factors": factors[:3] if factors else base_analysis.factors,
+            },
+            deep=True,
+        )
+
+    def _constraint_severity(self, level: ConstraintLevel) -> float:
+        return {
+            ConstraintLevel.LOW: 0.00,
+            ConstraintLevel.MEDIUM: 0.10,
+            ConstraintLevel.HIGH: 0.20,
+        }[level]
 
     def _build_selected_system(self, integrated_result) -> SelectedSystemBundle:
         return SelectedSystemBundle(
