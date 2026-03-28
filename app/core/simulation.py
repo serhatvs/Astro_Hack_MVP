@@ -5,9 +5,19 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.mission_state import MissionResources, MissionState
+from app.models.mission import Duration
 
 SIMULATION_STEP_WEEKS = 1
-SIMULATION_MAX_WEEKS = 12
+SIMULATION_MAX_REQUEST_STEP = 48
+
+
+def max_weeks_for_duration(duration: Duration) -> int:
+    mapping = {
+        Duration.SHORT: 12,
+        Duration.MEDIUM: 24,
+        Duration.LONG: 48,
+    }
+    return mapping[duration]
 
 
 class MissionEvents(BaseModel):
@@ -27,7 +37,7 @@ class MissionStepRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     mission_id: str
-    time_step: int = Field(default=SIMULATION_STEP_WEEKS, gt=0, le=SIMULATION_MAX_WEEKS)
+    time_step: int = Field(default=SIMULATION_STEP_WEEKS, gt=0, le=SIMULATION_MAX_REQUEST_STEP)
     events: MissionEvents | None = None
 
 

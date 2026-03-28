@@ -26,6 +26,9 @@ const recommendation: RecommendationResponse = {
       area: "medium",
     },
     time: 0,
+    max_weeks: 48,
+    initial_risk_level: 26,
+    end_reason: null,
     resources: {
       water: 62,
       energy: 62,

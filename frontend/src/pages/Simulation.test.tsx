@@ -28,6 +28,9 @@ const session: SimulationStartResponse = {
       area: "medium",
     },
     time: 0,
+    max_weeks: 24,
+    initial_risk_level: 24,
+    end_reason: null,
     resources: {
       water: 62,
       energy: 62,
@@ -178,7 +181,7 @@ describe("Simulation page", () => {
 
     expect(screen.getByText("Lactuca Sativa (Marul)")).toBeInTheDocument();
     expect(screen.getByText("Deterministic Simulation")).toBeInTheDocument();
-    expect(screen.getByText(/Mission Horizon:/i)).toBeInTheDocument();
+    expect(screen.getByText(/Planned Horizon:/i)).toBeInTheDocument();
   });
 
   it("shows a strong failure banner when the simulation reaches a critical state", () => {
@@ -187,6 +190,7 @@ describe("Simulation page", () => {
       mission_status: "CRITICAL",
       mission_state: {
         ...session.mission_state,
+        end_reason: "risk_collapse",
         system_metrics: {
           ...session.mission_state.system_metrics,
           risk_level: 82,
@@ -215,6 +219,7 @@ describe("Simulation page", () => {
       mission_state: {
         ...session.mission_state,
         time: 12,
+        end_reason: "risk_collapse",
         resources: {
           water: 18,
           energy: 26,

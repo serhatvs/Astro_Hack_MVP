@@ -103,6 +103,9 @@ export interface MissionState {
   goal: BackendGoal;
   constraints: MissionConstraints;
   time: number;
+  max_weeks: number;
+  initial_risk_level: number;
+  end_reason?: string | null;
   resources: MissionStateResourceSet;
   active_system: {
     crops: MissionStateActiveItem[];

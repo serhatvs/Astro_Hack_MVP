@@ -18,7 +18,7 @@ interface SimulationRouteState {
 }
 
 type SimulationStatusLabel = "running" | "complete" | "failure";
-type EndReasonKey = "water_depleted" | "energy_depleted" | "risk_collapse" | "step_limit";
+type EndReasonKey = "water_depleted" | "energy_depleted" | "risk_collapse" | "duration_complete";
 
 const statusClass = (status: MissionStatus) => {
   if (status === "CRITICAL") {
@@ -30,7 +30,11 @@ const statusClass = (status: MissionStatus) => {
   return "border-neon-green/40 bg-neon-green/15 text-neon-green";
 };
 
-const MAX_SIMULATION_WEEKS = 12;
+const durationWeekTargets = {
+  short: 12,
+  medium: 24,
+  long: 48,
+} as const;
 const WEEKLY_STEP = 1;
 
 const formatPercentish = (value?: number | null) => {
@@ -195,13 +199,43 @@ const buildLayerInteractionHints = (
 };
 
 const resolveEndReason = (
+  endReason: string | null | undefined,
   simulationStatus: SimulationStatusLabel,
   riskLevel: number,
   waterLevel: number,
   energyLevel: number,
+  maxWeeks: number,
 ): { key: EndReasonKey; text: string } | null => {
   if (simulationStatus === "running") {
     return null;
+  }
+
+  if (endReason === "water_depleted") {
+    return {
+      key: "water_depleted",
+      text: "Water resources were exhausted",
+    };
+  }
+
+  if (endReason === "energy_depleted") {
+    return {
+      key: "energy_depleted",
+      text: "Energy supply collapsed",
+    };
+  }
+
+  if (endReason === "risk_collapse") {
+    return {
+      key: "risk_collapse",
+      text: "System risk exceeded safe limits",
+    };
+  }
+
+  if (endReason === "duration_complete") {
+    return {
+      key: "duration_complete",
+      text: `Simulation reached its ${maxWeeks}-week mission horizon`,
+    };
   }
 
   if (waterLevel <= 0) {
@@ -226,8 +260,8 @@ const resolveEndReason = (
   }
 
   return {
-    key: "step_limit",
-    text: `Simulation reached its ${MAX_SIMULATION_WEEKS}-week mission horizon`,
+    key: "duration_complete",
+    text: `Simulation reached its ${maxWeeks}-week mission horizon`,
   };
 };
 
@@ -322,15 +356,20 @@ const Simulation = () => {
     ("adaptation_summary" in session ? session.adaptation_summary : "") ||
     session.ui_enhanced?.adaptation_summary ||
     "Simulation initialized with the selected biological stack. Apply mission events to see how the loop responds.";
+  const maxWeeks = missionState.max_weeks ?? durationWeekTargets[missionState.duration];
   const currentRisk = missionState.system_metrics.risk_level;
+  const initialRisk = missionState.initial_risk_level ?? currentRisk;
   const previousRisk =
     typeof riskDelta === "number"
       ? Math.max(0, currentRisk - riskDelta)
       : previousSession?.mission_state.system_metrics.risk_level ?? null;
   const simulationStatus: SimulationStatusLabel =
-    session.mission_status === "CRITICAL"
+    missionState.end_reason === "water_depleted" ||
+    missionState.end_reason === "energy_depleted" ||
+    missionState.end_reason === "risk_collapse" ||
+    currentRisk >= 85
       ? "failure"
-      : missionState.time >= MAX_SIMULATION_WEEKS
+      : missionState.end_reason === "duration_complete" || missionState.time >= maxWeeks
         ? "complete"
         : "running";
   const simulationStatusTone =
@@ -346,15 +385,17 @@ const Simulation = () => {
         ? "Simulation Complete"
         : "Running";
   const endReason = resolveEndReason(
+    missionState.end_reason,
     simulationStatus,
     currentRisk,
     missionState.resources.water,
     missionState.resources.energy,
+    maxWeeks,
   );
   const endSummary =
     simulationStatus === "running"
       ? null
-      : `${endReason?.text || "Simulation finished."} Final risk settled at ${currentRisk.toFixed(2)}% after ${missionState.time} week(s).`;
+      : `${endReason?.text || "Simulation finished."} Final risk settled at ${currentRisk.toFixed(2)}% after ${missionState.time} of ${maxWeeks} weeks.`;
   const riskTrend =
     riskDelta === null
       ? "Baseline"
@@ -541,8 +582,12 @@ const Simulation = () => {
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <div className="rounded-lg border border-glass-border bg-muted/10 p-4">
-                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Total Weeks Survived</p>
+                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Survived Weeks</p>
                 <p className="mt-2 text-2xl font-mono text-foreground">{missionState.time}</p>
+              </div>
+              <div className="rounded-lg border border-glass-border bg-muted/10 p-4">
+                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Planned Duration</p>
+                <p className="mt-2 text-lg font-mono text-foreground">{maxWeeks} weeks</p>
               </div>
               <div className="rounded-lg border border-glass-border bg-muted/10 p-4">
                 <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Final Risk Level</p>
@@ -556,18 +601,14 @@ const Simulation = () => {
                 <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Final System Status</p>
                 <p className="mt-2 text-lg font-mono text-foreground">{session.mission_status}</p>
               </div>
-              <div className="rounded-lg border border-glass-border bg-muted/10 p-4">
-                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Resource Margin</p>
-                <p className="mt-2 text-sm font-mono text-foreground">
-                  Water {Math.round(missionState.resources.water)}% / Energy {Math.round(missionState.resources.energy)}%
-                </p>
-              </div>
             </div>
-
-              <div className="rounded-lg border border-glass-border bg-muted/10 p-4">
-                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">End Reason</p>
-                <p className="mt-2 text-sm text-foreground">{endReason?.text || "Simulation ended."}</p>
-              </div>
+            <div className="rounded-lg border border-glass-border bg-muted/10 p-4">
+              <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">End Reason</p>
+              <p className="mt-2 text-sm text-foreground">{endReason?.text || "Simulation ended."}</p>
+              <p className="mt-1 text-xs font-mono text-muted-foreground">
+                Initial risk {initialRisk.toFixed(2)}% {"->"} Final risk {currentRisk.toFixed(2)}%
+              </p>
+            </div>
 
             <div className="rounded-lg border border-glass-border bg-terminal/50 p-4">
               <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Final Deterministic Summary</p>
@@ -627,10 +668,10 @@ const Simulation = () => {
               </p>
               <div className="flex flex-wrap gap-3 text-[11px] font-mono text-muted-foreground">
                 <span>Environment: <span className="text-foreground">{formatLabel(missionState.environment)}</span></span>
-                <span>Duration: <span className="text-foreground">{formatLabel(missionState.duration)}</span></span>
+                <span>Mission Duration: <span className="text-foreground">{formatLabel(missionState.duration)}</span></span>
+                <span>Planned Horizon: <span className="text-foreground">{maxWeeks} weeks</span></span>
                 <span>Goal: <span className="text-foreground">{formatLabel(missionState.goal)}</span></span>
-                <span>Mission Horizon: <span className="text-foreground">{MAX_SIMULATION_WEEKS} weeks</span></span>
-                <span>Current Week: <span className="text-foreground">{missionState.time}</span></span>
+                <span>Current Week: <span className="text-foreground">{missionState.time} / {maxWeeks}</span></span>
                 <span>Last Weekly Event: <span className="text-foreground">{lastEventFeedback}</span></span>
                 <span>
                   Mode: <span className="text-neon-green">Deterministic Simulation</span>
@@ -871,6 +912,9 @@ const Simulation = () => {
                 <p className="mt-2 text-sm font-mono text-foreground">
                   {previousRisk !== null ? `${previousRisk.toFixed(2)}% -> ${currentRisk.toFixed(2)}%` : `${currentRisk.toFixed(2)}%`}
                 </p>
+                <p className="mt-1 text-[10px] font-mono text-muted-foreground">
+                  Start baseline: {initialRisk.toFixed(2)}%
+                </p>
                 <p className={`mt-1 text-xs font-mono ${riskTrend === "Increased" ? "text-neon-red" : riskTrend === "Decreased" ? "text-neon-green" : "text-muted-foreground"}`}>
                   {riskTrend}
                   {typeof riskDelta === "number" && (
@@ -900,7 +944,7 @@ const Simulation = () => {
               </div>
               <div className="rounded-lg border border-glass-border bg-muted/10 p-3">
                 <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Current Week</p>
-                <p className="mt-2 text-lg font-mono text-foreground">{missionState.time} week(s)</p>
+                <p className="mt-2 text-lg font-mono text-foreground">{missionState.time} / {maxWeeks}</p>
                 <p className="mt-1 text-xs font-mono text-muted-foreground">
                   {latestEvents ? Object.values(latestEvents).filter((value) => value !== null && value !== undefined).length : 0} active weekly event(s)
                 </p>

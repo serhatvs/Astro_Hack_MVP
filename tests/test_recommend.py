@@ -272,6 +272,38 @@ def test_initial_risk_is_fairly_calibrated_by_constraints_and_duration(monkeypat
     assert low_risk < medium_risk < high_risk
 
 
+def test_simulation_duration_maps_to_weekly_horizon(monkeypatch) -> None:
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+    for duration, expected_weeks in {
+        "short": 12,
+        "medium": 24,
+        "long": 48,
+    }.items():
+        response = client.post(
+            "/simulation/start",
+            json={
+                "mission_profile": {
+                    "environment": "moon",
+                    "duration": duration,
+                    "constraints": {
+                        "water": "medium",
+                        "energy": "medium",
+                        "area": "medium",
+                    },
+                    "goal": "balanced",
+                },
+                "selected_crop": "Lactuca sativa (Marul)",
+                "selected_algae": "Chlorella vulgaris",
+                "selected_microbial": "Saccharomyces boulardii",
+            },
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["mission_state"]["max_weeks"] == expected_weeks
+
+
 def test_simulation_start_bootstraps_selected_stack(monkeypatch) -> None:
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     baseline = client.post(
@@ -311,6 +343,8 @@ def test_simulation_start_bootstraps_selected_stack(monkeypatch) -> None:
     assert data["mission_status"] in {"NOMINAL", "WATCH", "CRITICAL"}
     assert data["operational_note"]
     assert data["ui_enhanced"]["executive_summary"]
+    assert data["mission_state"]["max_weeks"] == 48
+    assert data["mission_state"]["initial_risk_level"] == data["mission_state"]["system_metrics"]["risk_level"]
     assert not data["llm_analysis"]["reasoning_summary"].endswith(" -gemini")
 
 
@@ -372,6 +406,7 @@ def test_mission_step_updates_stored_state(monkeypatch) -> None:
     assert response.status_code == 200
     data = response.json()
     assert data["mission_state"]["mission_id"] == mission_state["mission_id"]
+    assert data["mission_state"]["max_weeks"] == mission_state["max_weeks"]
     assert data["mission_state"]["time"] == mission_state["time"] + 3
     assert data["mission_state"]["resources"]["water"] < mission_state["resources"]["water"]
     assert data["mission_state"]["resources"]["energy"] < mission_state["resources"]["energy"]
@@ -430,6 +465,7 @@ def test_mission_step_works_after_simulation_start(monkeypatch) -> None:
     assert data["mission_status"] in {"NOMINAL", "WATCH", "CRITICAL"}
     assert data["operational_note"]
     assert data["adaptation_summary"]
+    assert data["mission_state"]["max_weeks"] == 24
 
 
 def test_mission_step_applies_weekly_baseline_drain_without_explicit_events(monkeypatch) -> None:

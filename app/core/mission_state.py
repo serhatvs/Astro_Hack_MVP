@@ -78,6 +78,9 @@ class MissionState(BaseModel):
     goal: Goal
     constraints: MissionConstraints
     time: int = Field(default=0, ge=0)
+    max_weeks: int = Field(default=12, ge=1)
+    initial_risk_level: float = Field(default=0, ge=0, le=100)
+    end_reason: str | None = None
     resources: MissionResources
     active_system: ActiveSystemState
     system_metrics: SystemMetricsState
