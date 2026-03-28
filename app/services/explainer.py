@@ -7,6 +7,7 @@ from app.models.mission import ChangeEvent, ConstraintLevel, Duration, Environme
 from app.models.response import (
     CropRecommendation,
     MetricBreakdown,
+    MissionStatus,
     RecommendationResponse,
     RiskAnalysis,
     RiskDelta,
@@ -142,46 +143,149 @@ class Explainer:
 
         return reason
 
-    def build_system_reason(self, mission: MissionProfile, selected_system: GrowingSystem) -> str:
+    def build_system_reasoning(self, mission: MissionProfile, selected_system: GrowingSystem) -> str:
         environment_label = self.format_environment(mission.environment)
         driver = self._dominant_driver(mission)
         system_templates = {
-            "aeroponic": "Aeroponic systems favor water efficiency and compact production when scarcity is the main pressure.",
-            "hydroponic": "Hydroponic systems favor operational simplicity and steadier crew handling.",
-            "hybrid": "Hybrid systems balance resilience, efficiency, and adaptability across mixed constraints.",
-        }
-        environment_templates = {
-            Environment.MARS: "Mars missions reward calorie continuity and resilient operating margins.",
-            Environment.MOON: "Moon missions amplify water recovery value and recycling resilience.",
-            Environment.ISS: "ISS missions favor lower-maintenance, crew-friendly agricultural operations.",
+            "aeroponic": "Aeroponic systems favor aggressive water savings and compact production when scarcity dominates the mission.",
+            "hydroponic": "Hydroponic systems favor operational simplicity, predictable upkeep, and steadier crew handling.",
+            "hybrid": "Hybrid systems balance resilience, efficiency, and operational flexibility across mixed constraints.",
         }
         base_reason = system_templates[selected_system.name]
-        env_reason = environment_templates[mission.environment]
-        return f"{base_reason} In this {environment_label} mission, the dominant driver is {driver}, so {selected_system.name} is the best fit. {env_reason}"
+        environment_note = selected_system.environment_notes.get(mission.environment.value, selected_system.notes)
+        return (
+            f"{base_reason} The dominant driver on this {environment_label} mission is {driver}. {environment_note}"
+        )
 
-    def build_overall_explanation(
-        self,
-        mission: MissionProfile,
-        selected_system: GrowingSystem,
-        top_crop: ScoredCrop,
-        crop_recommendation: CropRecommendation,
-        risk_analysis: RiskAnalysis,
-        system_reason: str,
-    ) -> str:
+    def build_system_reason(self, mission: MissionProfile, selected_system: GrowingSystem) -> str:
+        return self.build_system_reasoning(mission, selected_system)
+
+    def build_why_this_system(self, mission: MissionProfile, selected_system: GrowingSystem) -> str:
         environment_label = self.format_environment(mission.environment)
         driver = self._dominant_driver(mission)
-        duration_clause = f"{mission.duration.value}-duration " if mission.duration in {Duration.LONG, Duration.SHORT} else ""
-        risk_clause = (
-            "Overall agriculture risk remains low."
-            if risk_analysis.level.value == "low"
-            else f"Risk is {risk_analysis.level.value} because of {risk_analysis.factors[0]}."
-        )
+        system_label = self._format_system(selected_system.name)
+        fit_fragments = {
+            "aeroponic": "it preserves water aggressively when recovery margin matters most",
+            "hydroponic": "it keeps upkeep predictable for crew-facing operations",
+            "hybrid": "it balances resilience and efficiency without overcommitting to one tradeoff",
+        }
         return (
-            f"Given the {duration_clause}{environment_label} mission and {driver}, the engine ranked "
-            f"{top_crop.crop.name} first because {crop_recommendation.reason[0].lower()}{crop_recommendation.reason[1:]} "
-            f"The chosen {selected_system.name} system fits because {system_reason[0].lower()}{system_reason[1:]} "
-            f"{risk_clause}"
+            f"{system_label} is the best fit because {driver} dominates this {environment_label} mission, and "
+            f"{fit_fragments[selected_system.name]}."
         )
+
+    def build_tradeoff_summary(
+        self,
+        selected_system: GrowingSystem,
+        top_crop_recommendation: CropRecommendation,
+    ) -> str:
+        system_drawbacks = {
+            "hydroponic": "it gives up peak water efficiency to keep operations simpler and more stable",
+            "aeroponic": "it raises maintenance and power demand to maximize water savings",
+            "hybrid": "it accepts moderate resource overhead to preserve resilience and adaptability",
+        }
+        crop_tradeoff = (
+            top_crop_recommendation.tradeoffs[0]
+            if top_crop_recommendation.tradeoffs
+            else "the lead crop still needs routine monitoring"
+        )
+        system_label = self._format_system(selected_system.name)
+        return (
+            f"{system_label} was selected even though {system_drawbacks[selected_system.name]}; "
+            f"the lead crop tradeoff is that {self._lowercase_first(crop_tradeoff)}."
+        )
+
+    def build_operational_note(
+        self,
+        risk_analysis: RiskAnalysis,
+        selected_system: GrowingSystem,
+    ) -> str:
+        primary_factor = risk_analysis.factors[0]
+        if primary_factor == "no major mission stressors detected":
+            return (
+                f"Maintain the {selected_system.name} baseline and continue routine monitoring of water, "
+                "energy, and crew workload margins."
+            )
+        if "water" in primary_factor.lower():
+            return "Protect water reserves, verify recycler performance, and watch irrigation stability closely."
+        if "energy" in primary_factor.lower():
+            return "Preserve power margin and defer nonessential grow-module energy loads until conditions stabilize."
+        if "maintenance" in primary_factor.lower() or "crew" in primary_factor.lower():
+            return "Reduce crew handling churn and schedule maintenance checks before workload compounds."
+        if "area" in primary_factor.lower():
+            return "Protect compact grow capacity and prioritize high-return crops until area pressure relaxes."
+        if "calorie" in primary_factor.lower():
+            return "Protect staple-crop continuity and consider shifting reserve area toward higher calorie output."
+        if "robustness" in primary_factor.lower():
+            return "Keep contingency margin available and avoid pushing the system into higher-complexity operating modes."
+        return "Maintain current operating margins and continue watching the lead crop and system health indicators."
+
+    def build_mission_status(
+        self,
+        mission: MissionProfile,
+        risk_analysis: RiskAnalysis,
+        selected_system: GrowingSystem,
+        lead_crop_compatibility_score: float,
+        penalty_on_previous_lead_crop: bool = False,
+    ) -> MissionStatus:
+        score = {
+            "low": 0,
+            "moderate": 1,
+            "high": 2,
+        }[risk_analysis.level.value]
+
+        low_constraints = sum(
+            1
+            for constraint in (
+                mission.constraints.water,
+                mission.constraints.energy,
+                mission.constraints.area,
+            )
+            if constraint is ConstraintLevel.LOW
+        )
+        if low_constraints >= 2:
+            score += 1
+
+        if self._has_system_pairing_penalty(mission, selected_system):
+            score += 1
+
+        if lead_crop_compatibility_score < 0.60:
+            score += 1
+
+        if penalty_on_previous_lead_crop:
+            score += 1
+
+        if score >= 4:
+            return MissionStatus.CRITICAL
+        if score >= 2:
+            return MissionStatus.WATCH
+        return MissionStatus.NOMINAL
+
+    def build_executive_summary(
+        self,
+        mission: MissionProfile,
+        top_crop_recommendation: CropRecommendation,
+        selected_system: GrowingSystem,
+        mission_status: MissionStatus,
+        risk_analysis: RiskAnalysis,
+    ) -> str:
+        environment_label = self.format_environment(mission.environment)
+        lead_crop = top_crop_recommendation.name.title()
+        system_label = self._format_system(selected_system.name)
+        primary_strength = (
+            top_crop_recommendation.strengths[0].lower()
+            if top_crop_recommendation.strengths
+            else "balanced mission fit"
+        )
+        driver = self._dominant_driver(mission)
+        return (
+            f"{environment_label} mission status is {mission_status.value}: {lead_crop} leads the crop portfolio with "
+            f"{system_label} as the primary system. The plan prioritizes {driver}, with {lead_crop.lower()} providing "
+            f"{primary_strength} while agriculture risk remains {risk_analysis.level.value}."
+        )
+
+    def build_explanation(self, executive_summary: str, operational_note: str) -> str:
+        return f"{executive_summary} {operational_note}"
 
     def build_simulation_reason(
         self,
@@ -192,42 +296,62 @@ class Explainer:
         system_changed: bool,
         affected_crop: str | None,
         penalty_applied: bool,
+        risk_score_delta: float,
     ) -> str:
         previous_top = previous_recommendation.top_crops[0].name
         new_top = updated_recommendation.top_crops[0].name
         event_reason = {
-            ChangeEvent.WATER_DROP: "Water availability decreased, so the engine shifted toward more water-efficient crops and systems.",
-            ChangeEvent.ENERGY_DROP: "Energy availability decreased, so the engine shifted toward lower-energy crop and system choices.",
-            ChangeEvent.YIELD_DROP: "A simulated yield disruption triggered a re-ranking of the crop portfolio.",
+            ChangeEvent.WATER_DROP: (
+                "Water availability decreased, so the engine reweighted the mission toward water efficiency and "
+                "closed-loop recovery."
+            ),
+            ChangeEvent.ENERGY_DROP: (
+                "Energy availability decreased, so the engine shifted toward lower-energy crops and simpler system load."
+            ),
+            ChangeEvent.YIELD_DROP: "A simulated yield disruption triggered a deterministic re-ranking of the crop portfolio.",
         }[change_event]
 
         parts = [event_reason]
 
         if change_event is ChangeEvent.YIELD_DROP and affected_crop:
             if penalty_applied:
-                parts.append(f"{affected_crop} received a direct temporary yield penalty.")
+                parts.append(f"{affected_crop.title()} received a direct temporary yield penalty.")
             else:
-                parts.append(f"{affected_crop} was not found in the active crop pool, so the engine applied a generic resilience re-ranking.")
+                parts.append(
+                    f"{affected_crop.title()} was not found in the active crop pool, so the engine applied a generic resilience re-ranking."
+                )
 
         if previous_top != new_top:
-            parts.append(f"The lead crop changed from {previous_top} to {new_top}.")
+            parts.append(f"The lead crop changed from {previous_top.title()} to {new_top.title()}.")
         else:
-            parts.append(f"{new_top} remained the lead crop because it still best matched the updated mission profile.")
+            parts.append(
+                f"{new_top.title()} remained the lead crop because it still best matched the updated mission profile."
+            )
 
         if system_changed:
             parts.append(
-                f"The primary system changed from {previous_recommendation.recommended_system} to "
-                f"{updated_recommendation.recommended_system}."
+                f"The primary system changed from {self._format_system(previous_recommendation.recommended_system)} "
+                f"to {self._format_system(updated_recommendation.recommended_system)}."
             )
         else:
-            parts.append(f"The primary system stayed at {updated_recommendation.recommended_system}.")
+            parts.append(
+                f"The primary system stayed at {self._format_system(updated_recommendation.recommended_system)}."
+            )
 
-        if risk_delta is RiskDelta.INCREASED:
-            parts.append("Overall mission-agriculture risk increased.")
-        elif risk_delta is RiskDelta.DECREASED:
-            parts.append("Overall mission-agriculture risk decreased.")
+        parts.append(
+            f"Risk score moved by {risk_score_delta:+.3f} and is now "
+            f"{updated_recommendation.risk_analysis.score:.3f} ({risk_delta.value})."
+        )
+
+        if previous_recommendation.mission_status != updated_recommendation.mission_status:
+            parts.append(
+                f"Mission status shifted from {previous_recommendation.mission_status.value} to "
+                f"{updated_recommendation.mission_status.value}."
+            )
         else:
-            parts.append("Overall mission-agriculture risk stayed stable.")
+            parts.append(
+                f"Mission status remains {updated_recommendation.mission_status.value}."
+            )
 
         return " ".join(parts)
 
@@ -242,18 +366,21 @@ class Explainer:
         if mission.goal is Goal.CALORIE_MAX or mission.environment is Environment.MARS:
             boosts["High calorie density"] = 0.12
             boosts["Operational stability"] = 0.08
+            boosts["Strong recycling synergy"] = max(boosts.get("Strong recycling synergy", 0.0), 0.04)
 
         if mission.goal is Goal.WATER_EFFICIENCY or mission.environment is Environment.MOON:
             boosts["Water efficient under constrained operations"] = 0.12
-            boosts["Strong recycling synergy"] = 0.07
+            boosts["Strong recycling synergy"] = 0.08
+            boosts["Strong CO2 utilization"] = max(boosts.get("Strong CO2 utilization", 0.0), 0.04)
 
         if mission.goal is Goal.LOW_MAINTENANCE or mission.environment is Environment.ISS:
             boosts["Low crew maintenance demand"] = 0.12
             boosts["Operational stability"] = max(boosts.get("Operational stability", 0.0), 0.08)
-            boosts["High crew acceptance"] = 0.05
+            boosts["High crew acceptance"] = 0.08
 
         if mission.duration is Duration.LONG:
             boosts["High calorie density"] = max(boosts.get("High calorie density", 0.0), 0.08)
+            boosts["Useful oxygen contribution"] = max(boosts.get("Useful oxygen contribution", 0.0), 0.04)
 
         if mission.constraints.water is ConstraintLevel.LOW:
             boosts["Water efficient under constrained operations"] = max(
@@ -271,7 +398,7 @@ class Explainer:
         if mission.constraints.area is ConstraintLevel.LOW:
             return "tight area limits"
         if mission.goal is Goal.CALORIE_MAX:
-            return "calorie maximization"
+            return "calorie continuity"
         if mission.goal is Goal.WATER_EFFICIENCY:
             return "water efficiency"
         if mission.goal is Goal.LOW_MAINTENANCE:
@@ -283,3 +410,22 @@ class Explainer:
         if mission.environment is Environment.ISS:
             return "crew-friendly operational stability"
         return "balanced trade-offs"
+
+    def _has_system_pairing_penalty(
+        self,
+        mission: MissionProfile,
+        selected_system: GrowingSystem,
+    ) -> bool:
+        if mission.environment in {Environment.MARS, Environment.MOON}:
+            return selected_system.complexity >= 65 or selected_system.maintenance >= 60
+        if mission.environment is Environment.ISS:
+            return selected_system.maintenance >= 45 or selected_system.complexity >= 50
+        return False
+
+    def _lowercase_first(self, text: str) -> str:
+        if not text:
+            return text
+        return text[0].lower() + text[1:]
+
+    def _format_system(self, system_name: str) -> str:
+        return system_name.replace("_", " ").title()

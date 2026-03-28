@@ -52,26 +52,45 @@ def evaluate_risk(
     if mission.environment is Environment.MARS and (
         selected_system.complexity >= 50 or any(item.crop.risk >= 45 for item in ranked_crops[:2])
     ):
-        points += 0.75
+        points += 1.0
         factors.append("Mars missions demand stronger robustness margins")
 
-    if mission.environment is Environment.MOON and any(
-        item.crop.water_need >= 60 for item in ranked_crops[:2]
+    if mission.environment is Environment.MARS and lead_crop is not None and lead_crop.calorie_yield < 60:
+        points += 0.5
+        factors.append("Mars calorie continuity is light for the selected lead crop")
+
+    if mission.environment is Environment.MOON and (
+        any(item.crop.water_need >= 50 for item in ranked_crops[:2])
+        or selected_system.water_efficiency < 70
     ):
-        points += 0.75
+        points += 1.0
         factors.append("Moon missions amplify water recovery pressure")
 
-    if mission.environment is Environment.ISS and (
-        selected_system.maintenance >= 45 or any(item.crop.maintenance >= 45 for item in ranked_crops[:2])
+    if mission.environment is Environment.MOON and any(
+        item.crop.waste_recycling_synergy < 60 for item in ranked_crops[:2]
     ):
-        points += 0.75
+        points += 0.5
+        factors.append("Moon missions benefit from stronger recycling synergy")
+
+    if mission.environment is Environment.ISS and (
+        selected_system.maintenance >= 45
+        or selected_system.complexity >= 45
+        or any(item.crop.maintenance >= 45 for item in ranked_crops[:2])
+    ):
+        points += 1.0
         factors.append("ISS operations prefer lower-maintenance crop cycles")
 
-    score = round(min(points / 5.0, 1.0), 3)
+    if mission.environment is Environment.ISS and any(
+        item.crop.crew_acceptance < 65 for item in ranked_crops[:2]
+    ):
+        points += 0.5
+        factors.append("ISS crews benefit from higher crop acceptance")
 
-    if points >= 3.5:
+    score = round(min(points / 6.0, 1.0), 3)
+
+    if points >= 4.0:
         level = RiskLevel.HIGH
-    elif points >= 1.75:
+    elif points >= 2.0:
         level = RiskLevel.MODERATE
     else:
         level = RiskLevel.LOW

@@ -28,3 +28,20 @@ class Crop(BaseModel):
     compatible_systems: list[str]
     preferred_environments: list[Environment]
     notes: str
+
+    @property
+    def closed_loop_score(self) -> float:
+        """Aggregate closed-loop contribution score on a 0..1 scale."""
+
+        return (
+            self.nutrient_density
+            + self.oxygen_contribution
+            + self.co2_utilization
+            + self.waste_recycling_synergy
+        ) / 400
+
+    @property
+    def crew_support_score(self) -> float:
+        """Crew support score derived from acceptance on a 0..1 scale."""
+
+        return self.crew_acceptance / 100

@@ -11,6 +11,7 @@ export type CrisisType = "water" | "energy" | "yield";
 export type ChangeEvent = "water_drop" | "energy_drop" | "yield_drop";
 export type RiskLevel = "low" | "moderate" | "high";
 export type RiskDelta = "increased" | "decreased" | "unchanged";
+export type MissionStatus = "NOMINAL" | "WATCH" | "CRITICAL";
 export type ApiStatus = "idle" | "loading" | "ready" | "warning" | "error";
 
 export interface DemoCase {
@@ -81,8 +82,14 @@ export interface RecommendationResponse {
   top_crops: CropRecommendation[];
   recommended_system: string;
   system_reason: string;
+  system_reasoning: string;
+  why_this_system: string;
+  tradeoff_summary: string;
   resource_plan: ResourcePlan;
   risk_analysis: RiskAnalysis;
+  mission_status: MissionStatus;
+  executive_summary: string;
+  operational_note: string;
   explanation: string;
 }
 
@@ -103,8 +110,12 @@ export interface SimulationResponse {
   previous_system: string | null;
   new_system: string | null;
   risk_delta: RiskDelta;
+  risk_score_delta: number;
+  previous_mission_status: MissionStatus;
+  new_mission_status: MissionStatus;
   updated_mission_profile: MissionPayload;
   updated_recommendation: RecommendationResponse;
+  adaptation_summary: string;
   reason: string;
   adaptation_reason: string;
 }

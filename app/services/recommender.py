@@ -44,6 +44,7 @@ class RecommendationEngine:
         mission: MissionProfile,
         temporary_penalties: Mapping[str, float] | None = None,
         weight_adjustments: Mapping[str, float] | None = None,
+        status_penalty: bool = False,
     ) -> RecommendationResponse:
         crops = self.provider.get_crops()
         systems = self.provider.get_systems()
@@ -78,71 +79,92 @@ class RecommendationEngine:
 
         resource_plan = self.resource_planner.build_plan(top_ranked_crops, selected_system)
         risk_analysis = evaluate_risk(mission, selected_system, top_ranked_crops)
-        system_reason = self.explainer.build_system_reason(mission, selected_system)
-        explanation = self.explainer.build_overall_explanation(
+        system_reasoning = self.explainer.build_system_reasoning(mission, selected_system)
+        why_this_system = self.explainer.build_why_this_system(mission, selected_system)
+        mission_status = self.explainer.build_mission_status(
             mission=mission,
-            selected_system=selected_system,
-            top_crop=top_ranked_crops[0],
-            crop_recommendation=crop_recommendations[0],
             risk_analysis=risk_analysis,
-            system_reason=system_reason,
+            selected_system=selected_system,
+            lead_crop_compatibility_score=crop_recommendations[0].compatibility_score,
+            penalty_on_previous_lead_crop=status_penalty,
         )
+        executive_summary = self.explainer.build_executive_summary(
+            mission=mission,
+            top_crop_recommendation=crop_recommendations[0],
+            selected_system=selected_system,
+            mission_status=mission_status,
+            risk_analysis=risk_analysis,
+        )
+        operational_note = self.explainer.build_operational_note(risk_analysis, selected_system)
+        tradeoff_summary = self.explainer.build_tradeoff_summary(selected_system, crop_recommendations[0])
+        explanation = self.explainer.build_explanation(executive_summary, operational_note)
 
         return RecommendationResponse(
             mission_profile=mission,
             top_crops=crop_recommendations,
             recommended_system=selected_system.name,
-            system_reason=system_reason,
+            system_reason=system_reasoning,
+            system_reasoning=system_reasoning,
+            why_this_system=why_this_system,
+            tradeoff_summary=tradeoff_summary,
             resource_plan=resource_plan,
             risk_analysis=risk_analysis,
+            mission_status=mission_status,
+            executive_summary=executive_summary,
+            operational_note=operational_note,
             explanation=explanation,
         )
 
     def simulate(self, request: SimulationRequest) -> SimulationResponse:
         baseline_recommendation = request.previous_recommendation or self.recommend(request.mission_profile)
         updated_mission = request.mission_profile
-        changed_fields: list[str] = []
         temporary_penalties: dict[str, float] | None = None
         weight_adjustments: dict[str, float] | None = None
         penalty_applied = False
+        penalty_on_previous_lead = False
 
         if request.change_event is ChangeEvent.WATER_DROP:
             updated_mission = self._update_constraints(
                 request.mission_profile,
                 water=downgrade_constraint(request.mission_profile.constraints.water),
             )
-            changed_fields.append("constraints.water")
         elif request.change_event is ChangeEvent.ENERGY_DROP:
             updated_mission = self._update_constraints(
                 request.mission_profile,
                 energy=downgrade_constraint(request.mission_profile.constraints.energy),
             )
-            changed_fields.append("constraints.energy")
         elif request.change_event is ChangeEvent.YIELD_DROP:
             crop_lookup = {crop.name.lower() for crop in self.provider.get_crops()}
             if request.affected_crop and request.affected_crop.lower() in crop_lookup:
                 affected_crop = request.affected_crop.lower()
-                temporary_penalties = {affected_crop: 0.35}
-                changed_fields.append(f"yield_penalty.{affected_crop}")
+                temporary_penalties = {affected_crop: 0.45}
                 penalty_applied = True
+                penalty_on_previous_lead = bool(
+                    baseline_recommendation.top_crops
+                    and baseline_recommendation.top_crops[0].name.lower() == affected_crop
+                )
             else:
-                weight_adjustments = {"growth_time": 0.08, "risk": 0.08}
-                changed_fields.append("crop_ranking")
+                weight_adjustments = {"growth_time": 0.08, "risk": 0.08, "closed_loop": 0.05}
 
         updated_recommendation = self.recommend(
             updated_mission,
             temporary_penalties=temporary_penalties,
             weight_adjustments=weight_adjustments,
+            status_penalty=penalty_on_previous_lead,
         )
 
         previous_top_crop = baseline_recommendation.top_crops[0].name if baseline_recommendation.top_crops else None
         new_top_crop = updated_recommendation.top_crops[0].name if updated_recommendation.top_crops else None
         system_changed = baseline_recommendation.recommended_system != updated_recommendation.recommended_system
+        risk_score_delta = round(
+            updated_recommendation.risk_analysis.score - baseline_recommendation.risk_analysis.score,
+            3,
+        )
         risk_delta = self._compute_risk_delta(
             baseline_recommendation.risk_analysis.score,
             updated_recommendation.risk_analysis.score,
         )
-        reason = self.explainer.build_simulation_reason(
+        adaptation_summary = self.explainer.build_simulation_reason(
             change_event=request.change_event,
             previous_recommendation=baseline_recommendation,
             updated_recommendation=updated_recommendation,
@@ -150,6 +172,12 @@ class RecommendationEngine:
             system_changed=system_changed,
             affected_crop=request.affected_crop,
             penalty_applied=penalty_applied,
+            risk_score_delta=risk_score_delta,
+        )
+        changed_fields = self._build_changed_fields(
+            previous_recommendation=baseline_recommendation,
+            updated_recommendation=updated_recommendation,
+            updated_mission_profile=updated_mission,
         )
 
         return SimulationResponse(
@@ -166,10 +194,14 @@ class RecommendationEngine:
             previous_system=baseline_recommendation.recommended_system,
             new_system=updated_recommendation.recommended_system,
             risk_delta=risk_delta,
+            risk_score_delta=risk_score_delta,
+            previous_mission_status=baseline_recommendation.mission_status,
+            new_mission_status=updated_recommendation.mission_status,
             updated_mission_profile=updated_mission,
             updated_recommendation=updated_recommendation,
-            reason=reason,
-            adaptation_reason=reason,
+            adaptation_summary=adaptation_summary,
+            reason=adaptation_summary,
+            adaptation_reason=adaptation_summary,
         )
 
     def _compute_ranking_diff(
@@ -210,6 +242,39 @@ class RecommendationEngine:
             area=area or mission.constraints.area,
         )
         return mission.model_copy(update={"constraints": constraints})
+
+    def _build_changed_fields(
+        self,
+        previous_recommendation: RecommendationResponse,
+        updated_recommendation: RecommendationResponse,
+        updated_mission_profile: MissionProfile,
+    ) -> list[str]:
+        changed_fields: list[str] = []
+        previous_constraints = previous_recommendation.mission_profile.constraints
+        updated_constraints = updated_mission_profile.constraints
+
+        if previous_constraints.water is not updated_constraints.water:
+            changed_fields.append("constraints.water")
+        if previous_constraints.energy is not updated_constraints.energy:
+            changed_fields.append("constraints.energy")
+        if previous_constraints.area is not updated_constraints.area:
+            changed_fields.append("constraints.area")
+
+        previous_ranking = [item.name for item in previous_recommendation.top_crops]
+        updated_ranking = [item.name for item in updated_recommendation.top_crops]
+        if previous_ranking != updated_ranking:
+            changed_fields.append("top_crops")
+
+        if previous_recommendation.recommended_system != updated_recommendation.recommended_system:
+            changed_fields.append("recommended_system")
+
+        if abs(previous_recommendation.risk_analysis.score - updated_recommendation.risk_analysis.score) > 0.01:
+            changed_fields.append("risk_analysis")
+
+        if previous_recommendation.mission_status != updated_recommendation.mission_status:
+            changed_fields.append("mission_status")
+
+        return changed_fields
 
 
 @lru_cache

@@ -28,11 +28,26 @@ const SystemPanel = ({ recommendation, simulation, isLoading }: SystemPanelProps
     );
   }
 
-  const { recommended_system, system_reason, resource_plan, risk_analysis } = recommendation;
+  const {
+    recommended_system,
+    system_reasoning,
+    why_this_system,
+    tradeoff_summary,
+    operational_note,
+    mission_status,
+    resource_plan,
+    risk_analysis,
+  } = recommendation;
   const riskColor =
     risk_analysis.level === "high"
       ? "bg-neon-red/20 text-neon-red border-neon-red/40"
       : risk_analysis.level === "moderate"
+        ? "bg-neon-orange/20 text-neon-orange border-neon-orange/40"
+        : "bg-neon-green/20 text-neon-green border-neon-green/40";
+  const statusColor =
+    mission_status === "CRITICAL"
+      ? "bg-neon-red/20 text-neon-red border-neon-red/40"
+      : mission_status === "WATCH"
         ? "bg-neon-orange/20 text-neon-orange border-neon-orange/40"
         : "bg-neon-green/20 text-neon-green border-neon-green/40";
 
@@ -58,7 +73,7 @@ const SystemPanel = ({ recommendation, simulation, isLoading }: SystemPanelProps
         )}
       </div>
 
-      <p className="break-words text-[11px] leading-relaxed text-foreground/75">{system_reason}</p>
+      <p className="break-words text-[11px] leading-relaxed text-foreground/75">{system_reasoning}</p>
 
       <div className="space-y-2">
         {resources.map((resource) => (
@@ -85,16 +100,30 @@ const SystemPanel = ({ recommendation, simulation, isLoading }: SystemPanelProps
         </div>
       </div>
 
-      <div className={`inline-block px-2 py-0.5 rounded border text-[10px] font-mono font-bold ${riskColor}`}>
-        RISK: {risk_analysis.level.toUpperCase()} ({toPercent(risk_analysis.score)})
+      <div className="flex flex-wrap gap-2">
+        <div className={`inline-block px-2 py-0.5 rounded border text-[10px] font-mono font-bold ${statusColor}`}>
+          STATUS: {mission_status}
+        </div>
+        <div className={`inline-block px-2 py-0.5 rounded border text-[10px] font-mono font-bold ${riskColor}`}>
+          RISK: {risk_analysis.level.toUpperCase()} ({toPercent(risk_analysis.score)})
+        </div>
       </div>
 
       <div className="min-h-0 flex-1 space-y-1 overflow-auto pr-1">
+        <div className="rounded border border-glass-border p-2">
+          <p className="text-[9px] uppercase tracking-wide text-muted-foreground">Why This System</p>
+          <p className="mt-1 break-words text-[10px] leading-relaxed text-foreground/75">{why_this_system}</p>
+        </div>
+        <div className="rounded border border-glass-border p-2">
+          <p className="text-[9px] uppercase tracking-wide text-muted-foreground">Tradeoff Summary</p>
+          <p className="mt-1 break-words text-[10px] leading-relaxed text-foreground/75">{tradeoff_summary}</p>
+        </div>
         {risk_analysis.factors.slice(0, 2).map((factor) => (
           <p key={factor} className="text-[10px] font-mono text-muted-foreground">
             - {factor}
           </p>
         ))}
+        <p className="break-words text-[10px] font-mono text-muted-foreground">{operational_note}</p>
       </div>
 
       {simulation && (

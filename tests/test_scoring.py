@@ -52,6 +52,18 @@ def test_environment_influence_changes_recommendation_behavior() -> None:
             goal=Goal.BALANCED,
         )
     )
+    moon = engine.recommend(
+        MissionProfile(
+            environment=Environment.MOON,
+            duration=Duration.MEDIUM,
+            constraints=MissionConstraints(
+                water=ConstraintLevel.MEDIUM,
+                energy=ConstraintLevel.MEDIUM,
+                area=ConstraintLevel.MEDIUM,
+            ),
+            goal=Goal.BALANCED,
+        )
+    )
     iss = engine.recommend(
         MissionProfile(
             environment=Environment.ISS,
@@ -65,5 +77,10 @@ def test_environment_influence_changes_recommendation_behavior() -> None:
         )
     )
 
-    assert mars.recommended_system != iss.recommended_system
+    assert mars.recommended_system == "hybrid"
+    assert moon.recommended_system == "aeroponic"
+    assert iss.recommended_system == "hydroponic"
     assert mars.top_crops[0].name != iss.top_crops[0].name
+    assert mars.executive_summary.startswith("Mars mission status")
+    assert moon.why_this_system.startswith("Aeroponic is the best fit")
+    assert iss.executive_summary.startswith("ISS mission status")

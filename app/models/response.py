@@ -15,6 +15,12 @@ class RiskLevel(StrEnum):
     HIGH = "high"
 
 
+class MissionStatus(StrEnum):
+    NOMINAL = "NOMINAL"
+    WATCH = "WATCH"
+    CRITICAL = "CRITICAL"
+
+
 class MetricBreakdown(BaseModel):
     """Normalized crop metric view for UI presentation."""
 
@@ -77,8 +83,14 @@ class RecommendationResponse(BaseModel):
     top_crops: list[CropRecommendation]
     recommended_system: str
     system_reason: str
+    system_reasoning: str
+    why_this_system: str
+    tradeoff_summary: str
     resource_plan: ResourcePlan
     risk_analysis: RiskAnalysis
+    mission_status: MissionStatus
+    executive_summary: str
+    operational_note: str
     explanation: str
 
 
@@ -113,8 +125,12 @@ class SimulationResponse(BaseModel):
     previous_system: str | None = None
     new_system: str | None = None
     risk_delta: RiskDelta
+    risk_score_delta: float
+    previous_mission_status: MissionStatus
+    new_mission_status: MissionStatus
     updated_mission_profile: MissionProfile
     updated_recommendation: RecommendationResponse
+    adaptation_summary: str
     reason: str
     adaptation_reason: str
 

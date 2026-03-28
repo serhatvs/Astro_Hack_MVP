@@ -128,12 +128,12 @@ const Index = () => {
         {
           level: "info",
           text: timestamped(
-            `Primary system -> ${formatLabel(response.recommended_system)} | Risk -> ${response.risk_analysis.level.toUpperCase()}`,
+            `Primary system -> ${formatLabel(response.recommended_system)} | Status -> ${response.mission_status} | Risk -> ${response.risk_analysis.level.toUpperCase()}`,
           ),
         },
         {
           level: "info",
-          text: timestamped(`Reasoning focus -> ${response.system_reason}`),
+          text: timestamped(`Executive summary -> ${response.executive_summary}`),
         },
       );
 
@@ -193,17 +193,23 @@ const Index = () => {
         {
           level: response.system_changed ? "warn" : "info",
           text: timestamped(
-            `System -> ${formatLabel(response.previous_system || "n/a")} => ${formatLabel(response.new_system || "n/a")} | Risk delta -> ${response.risk_delta}`,
+            `System -> ${formatLabel(response.previous_system || "n/a")} => ${formatLabel(response.new_system || "n/a")} | Risk delta -> ${response.risk_delta} (${response.risk_score_delta >= 0 ? "+" : ""}${response.risk_score_delta.toFixed(3)})`,
           ),
         },
         {
           level: "info",
-          text: timestamped(`Adaptation reason -> ${response.reason}`),
+          text: timestamped(
+            `Mission status -> ${response.previous_mission_status} => ${response.new_mission_status}`,
+          ),
+        },
+        {
+          level: "info",
+          text: timestamped(`Adaptation summary -> ${response.adaptation_summary}`),
         },
       );
 
       toast.warning("Crisis simulation updated", {
-        description: response.reason,
+        description: response.adaptation_summary,
       });
     } catch (requestError) {
       const message = requestError instanceof Error ? requestError.message : "Unable to run simulation.";
@@ -321,7 +327,7 @@ const Index = () => {
           </div>
           <div className="min-h-[260px] min-w-0">
             <AIReasoning
-              message={simulation?.adaptation_reason || currentRecommendation?.explanation || null}
+              message={simulation?.adaptation_summary || currentRecommendation?.executive_summary || null}
               isAdaptive={isAdaptive}
               error={error}
             />

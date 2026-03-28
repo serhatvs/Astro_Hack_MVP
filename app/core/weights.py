@@ -14,6 +14,8 @@ BASE_CROP_WEIGHTS = {
     "growth_time": 0.15,
     "risk": 0.10,
     "maintenance": 0.10,
+    "closed_loop": 0.08,
+    "crew_support": 0.04,
 }
 
 BASE_SYSTEM_WEIGHTS = {
@@ -39,35 +41,42 @@ def derive_crop_weights(
 
     if mission.goal is Goal.CALORIE_MAX:
         weights["calorie"] += 0.40
+        weights["closed_loop"] += 0.04
     elif mission.goal is Goal.WATER_EFFICIENCY:
         weights["water"] += 0.25
         weights["risk"] += 0.05
+        weights["closed_loop"] += 0.04
     elif mission.goal is Goal.LOW_MAINTENANCE:
         weights["maintenance"] += 0.25
         weights["risk"] += 0.05
+        weights["crew_support"] += 0.04
 
     if mission.duration is Duration.LONG:
         weights["calorie"] += 0.10
         weights["growth_time"] += 0.10
+        weights["closed_loop"] += 0.03
     elif mission.duration is Duration.SHORT:
         weights["growth_time"] += 0.08 if mission.goal is Goal.CALORIE_MAX else 0.20
 
     if mission.constraints.water is ConstraintLevel.LOW:
         weights["water"] += 0.15
+        weights["closed_loop"] += 0.03
 
     if mission.constraints.energy is ConstraintLevel.LOW:
         weights["energy"] += 0.10
 
     if mission.environment is Environment.MARS:
         weights["calorie"] += 0.12
-        weights["risk"] += 0.08
-    elif mission.environment is Environment.MOON:
-        weights["water"] += 0.12
-        weights["risk"] += 0.08
-    elif mission.environment is Environment.ISS:
-        weights["maintenance"] += 0.12
         weights["risk"] += 0.10
-        weights["energy"] += 0.05
+        weights["closed_loop"] += 0.06
+    elif mission.environment is Environment.MOON:
+        weights["water"] += 0.15
+        weights["risk"] += 0.06
+        weights["closed_loop"] += 0.08
+    elif mission.environment is Environment.ISS:
+        weights["maintenance"] += 0.15
+        weights["risk"] += 0.08
+        weights["crew_support"] += 0.08
 
     if manual_adjustments:
         for metric, delta in manual_adjustments.items():
@@ -83,26 +92,31 @@ def derive_system_weights(mission: MissionProfile) -> dict[str, float]:
     weights = dict(BASE_SYSTEM_WEIGHTS)
 
     if mission.constraints.water is ConstraintLevel.LOW:
-        weights["water_efficiency"] += 0.20
+        weights["water_efficiency"] += 0.22
 
     if mission.constraints.energy is ConstraintLevel.LOW:
-        weights["energy_cost"] += 0.15
+        weights["energy_cost"] += 0.18
+
+    if mission.constraints.area is ConstraintLevel.LOW:
+        weights["complexity"] += 0.04
 
     if mission.goal is Goal.WATER_EFFICIENCY:
-        weights["water_efficiency"] += 0.10
+        weights["water_efficiency"] += 0.12
     elif mission.goal is Goal.LOW_MAINTENANCE:
-        weights["maintenance"] += 0.08
-        weights["complexity"] += 0.02
+        weights["maintenance"] += 0.12
+        weights["complexity"] += 0.04
+    elif mission.goal is Goal.CALORIE_MAX:
+        weights["complexity"] += 0.04
 
     if mission.environment is Environment.MARS:
-        weights["complexity"] += 0.06
-        weights["maintenance"] += 0.05
+        weights["complexity"] += 0.12
+        weights["maintenance"] += 0.08
     elif mission.environment is Environment.MOON:
-        weights["water_efficiency"] += 0.12
-        weights["complexity"] += 0.03
+        weights["water_efficiency"] += 0.18
+        weights["complexity"] += 0.05
     elif mission.environment is Environment.ISS:
-        weights["maintenance"] += 0.10
-        weights["complexity"] += 0.06
-        weights["energy_cost"] += 0.05
+        weights["maintenance"] += 0.16
+        weights["complexity"] += 0.10
+        weights["energy_cost"] += 0.04
 
-    return weights
+    return _renormalize(weights)

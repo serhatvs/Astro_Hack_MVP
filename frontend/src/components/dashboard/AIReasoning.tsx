@@ -5,7 +5,7 @@ interface AIReasoningProps {
 }
 
 const defaultText =
-  "Mission-control reasoning will appear here after the backend generates a recommendation. Use the mission inputs above, then trigger a crisis simulation to show how the plan adapts.";
+  "A deterministic mission summary will appear here after the backend generates a recommendation. Use the mission inputs above, then trigger a crisis simulation to show how the plan adapts.";
 
 const AIReasoning = ({ message, isAdaptive, error }: AIReasoningProps) => {
   const bodyText = error || message || defaultText;
@@ -15,10 +15,10 @@ const AIReasoning = ({ message, isAdaptive, error }: AIReasoningProps) => {
     <div className="glass-panel flex h-full min-h-[260px] min-w-0 flex-col overflow-hidden p-3 space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
-          {isAdaptive ? "Adaptive Reasoning" : "System Reasoning"}
+          {isAdaptive ? "Adaptation Summary" : "Mission Summary"}
         </h3>
         <span className={`text-[9px] font-mono uppercase px-2 py-0.5 rounded border ${isAdaptive ? "border-neon-orange/50 text-neon-orange" : "border-glass-border text-muted-foreground"}`}>
-          {error ? "Backend Error" : isAdaptive ? "Runtime Update" : "Mission Planning"}
+          {error ? "Backend Error" : isAdaptive ? "Runtime Update" : "Deterministic Report"}
         </span>
       </div>
 
