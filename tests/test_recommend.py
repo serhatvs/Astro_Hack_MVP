@@ -143,6 +143,127 @@ def test_openapi_and_requirements_have_no_external_ai_runtime_dependency(monkeyp
     assert "anthropic" not in requirements_text
 
 
+def create_auth_headers(username: str = "test-user", password: str = "secret") -> dict[str, str]:
+    client.post("/api/register", json={"username": username, "password": password})
+    token_response = client.post("/api/login", json={"username": username, "password": password})
+    token = token_response.json()["access_token"]
+    return {"Authorization": f"Bearer {token}"}
+
+
+def test_choose_crop_stores_user_choice(monkeypatch) -> None:
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    headers = create_auth_headers("choice-user", "choicesecret")
+
+    rec = client.post(
+        "/api/recommend",
+        json={
+            "environment": "mars",
+            "duration": "long",
+            "constraints": {
+                "water": "medium",
+                "energy": "medium",
+                "area": "medium",
+            },
+            "goal": "balanced",
+        },
+        headers=headers,
+    )
+    assert rec.status_code == 200
+    top_crop = rec.json()["top_crops"][0]["name"]
+
+    response = client.post(
+        "/api/choose-crop",
+        json={"crop_name": top_crop, "environment": "mars"},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is True
+    assert payload["choice"]["crop_name"] == top_crop
+    assert "warning" not in payload
+
+    choices_response = client.get("/api/my-choices", headers=headers)
+    assert choices_response.status_code == 200
+    choices = choices_response.json()
+    assert isinstance(choices, list)
+    assert any(choice["crop_name"] == top_crop for choice in choices)
+
+
+def test_choose_suboptimal_crop_returns_warning(monkeypatch) -> None:
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    headers = create_auth_headers("suboptimal-user", "choicesecret")
+
+    rec = client.post(
+        "/api/recommend",
+        json={
+            "environment": "mars",
+            "duration": "long",
+            "constraints": {
+                "water": "medium",
+                "energy": "medium",
+                "area": "medium",
+            },
+            "goal": "balanced",
+        },
+        headers=headers,
+    )
+    assert rec.status_code == 200
+    all_crop_names = [c["name"] for c in rec.json()["top_crops"]]
+    fallback = "unicorn-crop"
+    # pick a likely non-recommended crop from data set
+    from app.services.data_provider import JSONDataProvider
+
+    candidate_names = [c.name for c in JSONDataProvider().get_crops() if c.name not in all_crop_names]
+    if candidate_names:
+        fallback = candidate_names[0]
+
+    response = client.post(
+        "/api/choose-crop",
+        json={"crop_name": fallback, "environment": "mars"},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is True
+    assert payload["choice"]["crop_name"] == fallback
+    assert "warning" in payload
+
+
+def test_simulate_prefers_last_user_choice(monkeypatch) -> None:
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    headers = create_auth_headers("simulate-user", "simsecret")
+
+    mission = {
+        "environment": "moon",
+        "duration": "medium",
+        "constraints": {"water": "medium", "energy": "medium", "area": "medium"},
+        "goal": "balanced",
+    }
+
+    rec = client.post("/api/recommend", json=mission, headers=headers)
+    assert rec.status_code == 200
+    chosen_crop = rec.json()["top_crops"][0]["name"]
+
+    choose_resp = client.post(
+        "/api/choose-crop",
+        json={"crop_name": chosen_crop, "environment": "moon"},
+        headers=headers,
+    )
+    assert choose_resp.status_code == 200
+
+    sim = client.post(
+        "/api/simulate",
+        json={"mission_profile": mission, "change_event": "yield_drop"},
+        headers=headers,
+    )
+    assert sim.status_code == 200
+    sim_data = sim.json()
+    assert sim_data["previous_top_crop"] is not None
+    assert sim_data["new_top_crop"] is not None
+
+
 def test_recommend_returns_stateful_multidomain_payload(monkeypatch) -> None:
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
 

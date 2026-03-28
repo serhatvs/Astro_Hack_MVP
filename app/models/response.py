@@ -260,3 +260,25 @@ class HealthResponse(BaseModel):
 
     status: str
     service: str
+
+
+class CropSelection(BaseModel):
+    """Selected crop details for optimise endpoint."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    name: str
+    reasoning_for_crop: str
+
+
+class OptimizeAgricultureResponse(BaseModel):
+    """Structured 3rd-party/LLM style optimize-agriculture response."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    top_crops: list[CropSelection]
+    selected_system: str
+    system_reasoning: str
+    executive_summary: str
+    status: str

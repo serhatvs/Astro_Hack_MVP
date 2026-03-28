@@ -24,14 +24,16 @@ from app.engine.crop_engine import ALGAE_LIKE_NAMES
 from app.engine.integration_engine import IntegrationEngine
 from app.llm.reasoning_loop import ReasoningLoop
 from app.models.demo_case import DemoCase
-from app.models.mission import ChangeEvent, ConstraintLevel, MissionConstraints, MissionProfile, downgrade_constraint
+from app.models.mission import ChangeEvent, ConstraintLevel, MissionConstraints, MissionProfile, OptimizeAgricultureRequest, downgrade_constraint
 from app.models.response import (
     CropRecommendation,
+    CropSelection,
     DomainScoreBundle,
     DomainScoreVector,
     ExplanationBundle,
     InteractionScoreBundle,
     MissionStepResponse,
+    OptimizeAgricultureResponse,
     RecommendationResponse,
     RiskDelta,
     ScoreBundle,
@@ -68,6 +70,52 @@ class RecommendationEngine:
         """Return named demo mission presets."""
 
         return self.provider.get_demo_cases()
+
+    def optimize_agriculture(self, payload: OptimizeAgricultureRequest) -> OptimizeAgricultureResponse:
+        """Simplified 'hard filter + AI reasoned' crop and system selection for MVP."""
+
+        # Deterministic safety hard-filter
+        crops = self.provider.get_crops()
+        eligible = [crop for crop in crops if crop.growth_time <= payload.mission_duration]
+
+        if not eligible:
+            raise HTTPException(status_code=400, detail="No crops are eligible for the given mission_duration")
+
+        # Weighted heuristic ranking (stateless for MVP)
+        def score_crop(crop):
+            return (
+                crop.calorie_yield * 0.35
+                - crop.water_need * 0.20
+                - crop.energy_need * 0.15
+                - crop.risk * 0.10
+                - crop.maintenance * 0.10
+                - crop.area_need * 0.10
+            )
+
+        top_three = sorted(eligible, key=score_crop, reverse=True)[:3]
+
+        systems = self.provider.get_systems()
+        system_candidates = [system for system in systems if payload.environment.value in getattr(system, "environment_notes", {})]
+        selected_system = system_candidates[0] if system_candidates else systems[0]
+
+        status = "NOMINAL"
+        if any(s.risk > 70 for s in eligible):
+            status = "WATCH"
+
+        return OptimizeAgricultureResponse(
+            top_crops=[
+                CropSelection(
+                    id=crop.name,
+                    name=crop.name,
+                    reasoning_for_crop=f"{crop.name.capitalize()} is selected because it balances calories, water efficiency and mission constraints."
+                )
+                for crop in top_three
+            ],
+            selected_system=selected_system.name,
+            system_reasoning=f"{selected_system.name.capitalize()} chosen for current environment ({payload.environment.value}) due to balanced resource profile.",
+            executive_summary="Optimal selection done with deterministic filter + heuristic ranking; LLM layer to be integrated.",
+            status=status,
+        )
 
     def recommend(
         self,

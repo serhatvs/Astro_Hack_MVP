@@ -1,0 +1,21 @@
+import httpx
+
+client = httpx.Client()
+print('register')
+res = client.post('http://127.0.0.1:8001/api/register', json={'username':'testuser','password':'Secret123'})
+print(res.status_code, res.text)
+print('login')
+res = client.post('http://127.0.0.1:8001/api/login', json={'username':'testuser','password':'Secret123'})
+print(res.status_code, res.text)
+if res.status_code != 200:
+    raise SystemExit('login failed')
+token = res.json().get('access_token')
+print('simulate no auth')
+res2 = client.post('http://127.0.0.1:8001/api/simulate', json={'mission_profile':{'environment':'mars','duration':'medium','constraints':{'water':'high','energy':'medium','area':'low'},'goal':'balanced'}, 'change_event':'water_drop'})
+print(res2.status_code, res2.text)
+print('simulate auth')
+res3 = client.post('http://127.0.0.1:8001/api/simulate', headers={'Authorization':f'Bearer {token}'}, json={'mission_profile':{'environment':'mars','duration':'medium','constraints':{'water':'high','energy':'medium','area':'low'},'goal':'balanced'}, 'change_event':'water_drop'})
+print(res3.status_code, res3.text[:400])
+print('optimise')
+res4 = client.post('http://127.0.0.1:8001/api/optimise_agriculture', json={'mission_duration':60,'water_limit':1000.0,'energy_limit':500.0,'environment':'mars'})
+print(res4.status_code, res4.text)

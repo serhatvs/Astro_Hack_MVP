@@ -54,6 +54,13 @@ export function simulateMission(payload: SimulationPayload): Promise<SimulationR
   });
 }
 
+export function calculateSurvivalDays(payload: SurvivalDaysPayload): Promise<SurvivalDaysResponse> {
+  return request<SurvivalDaysResponse>("/survival-days", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export function fetchDemoCases(): Promise<DemoCase[]> {
   return request<DemoCase[]>("/demo-cases");
 }

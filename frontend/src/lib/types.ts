@@ -233,6 +233,20 @@ export interface SimulationResponse {
   adaptation_reason: string;
 }
 
+export interface SurvivalDaysPayload {
+  people_count: number;
+  selected_crops: string[];
+  duration_days?: number;
+}
+
+export interface SurvivalDaysResponse {
+  total_calories: number;
+  daily_consumption: number;
+  survival_days: number;
+  warning?: string;
+  computed_cycles: Record<string, number>;
+}
+
 export interface TerminalEntry {
   level: "info" | "warn" | "success" | "error";
   text: string;

@@ -69,3 +69,14 @@ def downgrade_constraint(level: ConstraintLevel) -> ConstraintLevel:
     if level is ConstraintLevel.MEDIUM:
         return ConstraintLevel.LOW
     return ConstraintLevel.LOW
+
+
+class OptimizeAgricultureRequest(BaseModel):
+    """Lightweight request for optimized agriculture endpoint."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    mission_duration: int
+    water_limit: float
+    energy_limit: float
+    environment: Environment

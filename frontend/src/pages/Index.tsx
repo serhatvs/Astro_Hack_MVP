@@ -11,7 +11,7 @@ import SystemPanel from "@/components/dashboard/SystemPanel";
 import CrisisPanel from "@/components/dashboard/CrisisPanel";
 import AIReasoning from "@/components/dashboard/AIReasoning";
 import SystemTerminal from "@/components/dashboard/SystemTerminal";
-import { recommendMission, simulateMission } from "@/lib/api";
+import { calculateSurvivalDays, recommendMission, simulateMission } from "@/lib/api";
 import type {
   ApiStatus,
   BackendGoal,
@@ -23,6 +23,8 @@ import type {
   MissionPayload,
   RecommendationResponse,
   SimulationResponse,
+  SurvivalDaysPayload,
+  SurvivalDaysResponse,
   TerminalEntry,
   UiGoal,
 } from "@/lib/types";
@@ -59,6 +61,10 @@ const Index = () => {
   const [recommendation, setRecommendation] = useState<RecommendationResponse | null>(null);
   const [simulation, setSimulation] = useState<SimulationResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [peopleCount, setPeopleCount] = useState<number>(4);
+  const [selectedCrops, setSelectedCrops] = useState<string[]>([]);
+  const [survivalResult, setSurvivalResult] = useState<SurvivalDaysResponse | null>(null);
+  const [isCalculatingSurvival, setIsCalculatingSurvival] = useState(false);
   const [terminalEntries, setTerminalEntries] = useState<TerminalEntry[]>([
     { level: "info", text: timestamped("Mission control ready. Configure a mission profile and generate a plan.") },
   ]);
@@ -223,6 +229,45 @@ const Index = () => {
     }
   };
 
+  const handleAddCrop = (cropName: string) => {
+    setSelectedCrops((prev) => Array.from(new Set([...prev, cropName])));
+    setSurvivalResult(null);
+  };
+
+  const handleRemoveCrop = (cropName: string) => {
+    setSelectedCrops((prev) => prev.filter((c) => c !== cropName));
+    setSurvivalResult(null);
+  };
+
+  const handleCalculateSurvival = async () => {
+    const requestPayload: SurvivalDaysPayload = {
+      people_count: peopleCount,
+      selected_crops: selectedCrops,
+      duration_days: duration === "short" ? 20 : duration === "medium" ? 60 : 120,
+    };
+
+    setError(null);
+    setIsCalculatingSurvival(true);
+
+    try {
+      const result = await calculateSurvivalDays(requestPayload);
+      setSurvivalResult(result);
+
+      appendTerminalEntries(
+        { level: "info", text: timestamped(`Survival run -> ${selectedCrops.join(", ") || "none"}`) },
+        { level: "success", text: timestamped(`Estimated survival days -> ${result.survival_days}`) },
+      );
+    } catch (requestError) {
+      const message = requestError instanceof Error ? requestError.message : "Unable to calculate survival.";
+      setError(message);
+      appendTerminalEntries({ level: "error", text: timestamped(`Survival calculation failed -> ${message}`) });
+      toast.error("Survival calculation failed", { description: message });
+    } finally {
+      setIsCalculatingSurvival(false);
+    }
+  };
+
+
   return (
     <div className="min-h-screen w-full overflow-x-hidden bg-background p-3">
       <div className="mx-auto flex min-h-[calc(100vh-1.5rem)] w-full max-w-[1800px] flex-col gap-3">
@@ -338,6 +383,77 @@ const Index = () => {
               </div>
             )}
           </div>
+        </div>
+
+        <div className="glass-panel mb-3 p-4">
+          <h2 className="text-xs font-bold uppercase tracking-wide text-neon-cyan mb-2">Survival Days Calculator</h2>
+          <p className="text-xs text-muted-foreground mb-3">Pick a crew size, add selected crops, and estimate mission food endurance.</p>
+
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+            <label className="col-span-1 text-xs">
+              Crew size
+              <input
+                type="number"
+                min={1}
+                value={peopleCount}
+                onChange={(event) => setPeopleCount(Number(event.target.value) || 1)}
+                className="mt-1 w-full rounded border border-glass-border bg-background px-2 py-1 text-sm"
+              />
+            </label>
+            <label className="col-span-2 text-xs">
+              Selected crops
+              <div className="mt-1 flex flex-wrap gap-1">
+                {selectedCrops.length > 0
+                  ? selectedCrops.map((crop) => (
+                      <span key={crop} className="rounded bg-neon-cyan/15 px-2 py-1 text-[11px]">
+                        {formatLabel(crop)}
+                        <button type="button" onClick={() => handleRemoveCrop(crop)} className="ml-1 font-bold">
+                          ×
+                        </button>
+                      </span>
+                    ))
+                  : <span className="text-[11px] text-muted-foreground">No crops selected yet</span>}
+              </div>
+            </label>
+          </div>
+
+          <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-3">
+            {(currentRecommendation?.top_crops ?? []).slice(0, 5).map((crop) => (
+              <button
+                key={crop.name}
+                type="button"
+                onClick={() => handleAddCrop(crop.name)}
+                disabled={selectedCrops.includes(crop.name)}
+                className="rounded border border-glass-border px-2 py-1 text-[11px] hover:bg-neon-cyan/10 disabled:opacity-50"
+              >
+                {selectedCrops.includes(crop.name) ? `${formatLabel(crop.name)} (selected)` : `Add ${formatLabel(crop.name)}`}
+              </button>
+            ))}
+          </div>
+
+          <button
+            onClick={handleCalculateSurvival}
+            disabled={isCalculatingSurvival || selectedCrops.length === 0}
+            className="mt-3 rounded border border-neon-green bg-neon-green/10 px-3 py-2 text-xs font-bold text-neon-green hover:bg-neon-green/20 disabled:opacity-40"
+          >
+            {isCalculatingSurvival ? "Calculating..." : "Calculate Survival"}
+          </button>
+
+          {survivalResult && (
+            <div className="mt-3 rounded border border-glass-border p-3 text-xs">
+              <p>Total calories: {survivalResult.total_calories.toLocaleString()}</p>
+              <p>Daily consumption: {survivalResult.daily_consumption.toLocaleString()}</p>
+              <p>Survival days: {survivalResult.survival_days.toFixed(2)}</p>
+              {survivalResult.warning && <p className="text-neon-red">Warning: {survivalResult.warning}</p>}
+
+              <div className="mt-2 h-2 w-full rounded bg-slate-700">
+                <div
+                  className={`h-full rounded ${survivalResult.survival_days >= 14 ? "bg-green-500" : "bg-red-500"}`}
+                  style={{ width: `${Math.min(100, (survivalResult.survival_days / 30) * 100)}%` }}
+                />
+              </div>
+            </div>
+          )}
         </div>
 
         {showLowerPanels && (
