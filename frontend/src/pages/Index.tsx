@@ -77,6 +77,8 @@ const Index = () => {
   const currentRecommendation = simulation?.updated_recommendation ?? recommendation;
   const currentMission = simulation?.updated_mission_profile ?? recommendation?.mission_profile ?? buildMissionPayload();
   const crops = currentRecommendation?.top_crops ?? [];
+  const geminiReasoningSummary = currentRecommendation?.llm_analysis?.reasoning_summary?.trim() ?? "";
+  const geminiUsed = geminiReasoningSummary.endsWith(" -gemini");
   const selectedStack = currentRecommendation?.selected_system
     ? [
         currentRecommendation.selected_system.crop,
@@ -278,7 +280,19 @@ const Index = () => {
                 : "Awaiting Mission Plan"}
             </h2>
             {currentRecommendation && (
-              <span className="text-[10px] font-mono text-muted-foreground">
+              <div className="flex flex-wrap items-center justify-end gap-2 text-[10px] font-mono text-muted-foreground">
+                <span
+                  className={`rounded border px-1.5 py-0.5 uppercase tracking-wider ${
+                    geminiUsed
+                      ? "border-neon-cyan/40 bg-neon-cyan/10 text-neon-cyan"
+                      : "border-glass-border bg-muted/20 text-muted-foreground"
+                  }`}
+                >
+                  Gemini
+                </span>
+                <span className={geminiUsed ? "text-neon-cyan" : "text-muted-foreground"}>
+                  {geminiUsed ? "Gemini kullanildi" : "Gemini kullanilmadi"}
+                </span>
                 {showingIntegratedStack ? (
                   <>
                     Integrated score:{" "}
@@ -298,7 +312,7 @@ const Index = () => {
                     </span>
                   </>
                 )}
-              </span>
+              </div>
             )}
           </div>
 
