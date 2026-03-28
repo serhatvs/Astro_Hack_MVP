@@ -1,0 +1,81 @@
+[
+  {
+    "name": "potato",
+    "calorie_yield": 92,
+    "water_need": 68,
+    "energy_need": 55,
+    "growth_time": 75,
+    "risk": 40,
+    "maintenance": 45,
+    "area_need": 70,
+    "compatible_systems": ["hydroponic", "aeroponic", "hybrid"],
+    "preferred_environments": ["mars", "moon"],
+    "notes": "Reliable staple crop with strong calorie density for long-duration missions."
+  },
+  {
+    "name": "wheat",
+    "calorie_yield": 88,
+    "water_need": 60,
+    "energy_need": 58,
+    "growth_time": 82,
+    "risk": 46,
+    "maintenance": 50,
+    "area_need": 65,
+    "compatible_systems": ["hydroponic", "hybrid"],
+    "preferred_environments": ["mars", "moon"],
+    "notes": "Stable grain option with good calorie return, but slower growth and moderate footprint."
+  },
+  {
+    "name": "lettuce",
+    "calorie_yield": 28,
+    "water_need": 35,
+    "energy_need": 30,
+    "growth_time": 25,
+    "risk": 20,
+    "maintenance": 25,
+    "area_need": 30,
+    "compatible_systems": ["hydroponic", "aeroponic", "hybrid"],
+    "preferred_environments": ["iss", "moon"],
+    "notes": "Fast, low-risk leafy green with modest resource needs and rapid harvest cycles."
+  },
+  {
+    "name": "spinach",
+    "calorie_yield": 32,
+    "water_need": 38,
+    "energy_need": 34,
+    "growth_time": 30,
+    "risk": 24,
+    "maintenance": 32,
+    "area_need": 35,
+    "compatible_systems": ["hydroponic", "aeroponic", "hybrid"],
+    "preferred_environments": ["iss", "mars"],
+    "notes": "Compact leafy crop with solid nutrient density and manageable maintenance."
+  },
+  {
+    "name": "strawberry",
+    "calorie_yield": 42,
+    "water_need": 52,
+    "energy_need": 50,
+    "growth_time": 55,
+    "risk": 65,
+    "maintenance": 72,
+    "area_need": 48,
+    "compatible_systems": ["hydroponic", "aeroponic", "hybrid"],
+    "preferred_environments": ["iss"],
+    "notes": "Useful morale crop, but more fragile and maintenance-intensive than staple options."
+  },
+  {
+    "name": "spirulina",
+    "calorie_yield": 75,
+    "water_need": 22,
+    "energy_need": 70,
+    "growth_time": 18,
+    "risk": 55,
+    "maintenance": 60,
+    "area_need": 12,
+    "compatible_systems": ["aeroponic", "hybrid"],
+    "preferred_environments": ["mars", "moon", "iss"],
+    "notes": "Compact, fast biomass producer with strong water efficiency, but higher operational complexity."
+  }
+]
+

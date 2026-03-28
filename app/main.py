@@ -1,0 +1,30 @@
+"""FastAPI entrypoint for the Space Agriculture AI MVP."""
+
+from __future__ import annotations
+
+from fastapi import FastAPI
+
+from app.routes.health import router as health_router
+from app.routes.recommend import router as recommend_router
+from app.routes.simulate import router as simulate_router
+
+
+def create_app() -> FastAPI:
+    """Create the FastAPI application instance."""
+
+    application = FastAPI(
+        title="Adaptive Closed-Loop Space Agriculture AI",
+        version="0.1.0",
+        description=(
+            "Mission-aware crop and growing-system recommendation engine for "
+            "closed-loop space agriculture planning."
+        ),
+    )
+    application.include_router(health_router)
+    application.include_router(recommend_router)
+    application.include_router(simulate_router)
+    return application
+
+
+app = create_app()
+

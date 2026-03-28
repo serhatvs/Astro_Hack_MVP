@@ -1,0 +1,54 @@
+"""Simple interpretable rule layer applied around weighted scoring."""
+
+from __future__ import annotations
+
+from app.models.crop import Crop
+from app.models.mission import ConstraintLevel, Duration, MissionProfile
+from app.models.system import GrowingSystem
+
+
+def filter_compatible_crops(crops: list[Crop], system: GrowingSystem) -> list[Crop]:
+    """Keep only crops compatible with the selected growing system."""
+
+    return [crop for crop in crops if system.name in crop.compatible_systems]
+
+
+def mission_has_constrained_resources(mission: MissionProfile) -> bool:
+    """Check if the mission has at least one tight resource."""
+
+    constraints = mission.constraints
+    return (
+        constraints.water is ConstraintLevel.LOW
+        or constraints.energy is ConstraintLevel.LOW
+        or constraints.area is ConstraintLevel.LOW
+    )
+
+
+def compute_rule_adjustment(crop: Crop, mission: MissionProfile) -> tuple[float, list[str]]:
+    """Apply small interpretable bonuses and penalties to crop scores."""
+
+    adjustment = 0.0
+    notes: list[str] = []
+
+    if mission.environment in crop.preferred_environments:
+        adjustment += 0.05
+        notes.append("environment-fit")
+
+    if mission.duration is Duration.SHORT and crop.growth_time >= 60:
+        adjustment -= 0.12
+        notes.append("slow-cycle-penalty")
+
+    if mission_has_constrained_resources(mission) and crop.maintenance >= 65:
+        adjustment -= 0.08
+        notes.append("maintenance-penalty")
+
+    if mission.constraints.area is ConstraintLevel.LOW and crop.area_need >= 55:
+        adjustment -= 0.10
+        notes.append("area-penalty")
+
+    if mission.constraints.water is ConstraintLevel.LOW and crop.water_need <= 35:
+        adjustment += 0.04
+        notes.append("water-efficiency-bonus")
+
+    return adjustment, notes
+

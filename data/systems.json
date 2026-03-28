@@ -1,0 +1,41 @@
+[
+  {
+    "name": "hydroponic",
+    "water_efficiency": 60,
+    "energy_cost": 35,
+    "complexity": 30,
+    "maintenance": 35,
+    "environment_notes": {
+      "mars": "Robust and familiar, but less water efficient under severe scarcity.",
+      "moon": "Good baseline choice for stable operations with simpler upkeep.",
+      "iss": "Well suited to controlled, crew-accessible growth modules."
+    },
+    "notes": "Simple and proven system with moderate efficiency and lower operational overhead."
+  },
+  {
+    "name": "aeroponic",
+    "water_efficiency": 92,
+    "energy_cost": 68,
+    "complexity": 78,
+    "maintenance": 65,
+    "environment_notes": {
+      "mars": "Strong fit when water is scarce and complexity can be tolerated.",
+      "moon": "Useful for water-limited missions, but demands tighter monitoring.",
+      "iss": "Efficient but operationally heavier for a compact station crew."
+    },
+    "notes": "Highest water efficiency, but also the most complex and energy-intensive option."
+  },
+  {
+    "name": "hybrid",
+    "water_efficiency": 78,
+    "energy_cost": 52,
+    "complexity": 50,
+    "maintenance": 48,
+    "environment_notes": {
+      "mars": "Balanced compromise between resilience, efficiency, and flexibility.",
+      "moon": "Useful middle-ground system for mixed mission priorities.",
+      "iss": "Balanced option when crew time and system redundancy both matter."
+    },
+    "notes": "Balanced system that trades some efficiency for resilience and adaptability."
+  }
+]
