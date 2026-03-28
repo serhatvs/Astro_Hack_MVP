@@ -45,6 +45,8 @@ const formatLabel = (value: string) =>
 const timestamped = (text: string) => `[${new Date().toLocaleTimeString("en-GB")}] ${text}`;
 
 const Index = () => {
+  // Temporary UI toggle: keep lower glass panels in code, but hide them from the dashboard for now.
+  const showLowerPanels = false;
   const [environment, setEnvironment] = useState<Environment>("mars");
   const [duration, setDuration] = useState<Duration>("long");
   const [waterConstraint, setWaterConstraint] = useState<ConstraintLevel>("high");
@@ -302,31 +304,33 @@ const Index = () => {
           </div>
         </div>
 
-        <div className="grid auto-rows-[minmax(260px,1fr)] grid-cols-1 gap-3 md:grid-cols-2 2xl:grid-cols-4">
-          <div className="min-h-[260px] min-w-0 overflow-hidden rounded-xl">
-            <SystemPanel recommendation={currentRecommendation} simulation={simulation} isLoading={isGenerating || isSimulating} />
+        {showLowerPanels && (
+          <div className="grid auto-rows-[minmax(260px,1fr)] grid-cols-1 gap-3 md:grid-cols-2 2xl:grid-cols-4">
+            <div className="min-h-[260px] min-w-0 overflow-hidden rounded-xl">
+              <SystemPanel recommendation={currentRecommendation} simulation={simulation} isLoading={isGenerating || isSimulating} />
+            </div>
+            <div className="min-h-[260px] min-w-0 overflow-hidden rounded-xl">
+              <CrisisPanel
+                onSimulate={handleCrisis}
+                disabled={!hasRecommendation || isGenerating || isSimulating}
+                isSimulating={isSimulating}
+                hasRecommendation={hasRecommendation}
+                lastEvent={simulation?.change_event || null}
+                simulation={simulation}
+              />
+            </div>
+            <div className="min-h-[260px] min-w-0 overflow-hidden rounded-xl">
+              <AIReasoning
+                message={simulation?.adaptation_summary || currentRecommendation?.executive_summary || null}
+                isAdaptive={isAdaptive}
+                error={error}
+              />
+            </div>
+            <div className="min-h-[260px] min-w-0 overflow-hidden rounded-xl">
+              <SystemTerminal entries={terminalEntries} apiStatus={apiStatus} />
+            </div>
           </div>
-          <div className="min-h-[260px] min-w-0 overflow-hidden rounded-xl">
-            <CrisisPanel
-              onSimulate={handleCrisis}
-              disabled={!hasRecommendation || isGenerating || isSimulating}
-              isSimulating={isSimulating}
-              hasRecommendation={hasRecommendation}
-              lastEvent={simulation?.change_event || null}
-              simulation={simulation}
-            />
-          </div>
-          <div className="min-h-[260px] min-w-0 overflow-hidden rounded-xl">
-            <AIReasoning
-              message={simulation?.adaptation_summary || currentRecommendation?.executive_summary || null}
-              isAdaptive={isAdaptive}
-              error={error}
-            />
-          </div>
-          <div className="min-h-[260px] min-w-0 overflow-hidden rounded-xl">
-            <SystemTerminal entries={terminalEntries} apiStatus={apiStatus} />
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );
