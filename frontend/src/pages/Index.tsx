@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import MissionInput from "@/components/dashboard/MissionInput";
 import LiveTelemetry from "@/components/dashboard/LiveTelemetry";
 import CropCard from "@/components/dashboard/CropCard";
+import DomainCard from "@/components/dashboard/DomainCard";
 import SystemPanel from "@/components/dashboard/SystemPanel";
 import CrisisPanel from "@/components/dashboard/CrisisPanel";
 import AIReasoning from "@/components/dashboard/AIReasoning";
@@ -76,6 +77,15 @@ const Index = () => {
   const currentRecommendation = simulation?.updated_recommendation ?? recommendation;
   const currentMission = simulation?.updated_mission_profile ?? recommendation?.mission_profile ?? buildMissionPayload();
   const crops = currentRecommendation?.top_crops ?? [];
+  const selectedStack = currentRecommendation?.selected_system
+    ? [
+        currentRecommendation.selected_system.crop,
+        currentRecommendation.selected_system.algae,
+        currentRecommendation.selected_system.microbial,
+      ]
+    : [];
+  const visibleCards = selectedStack.length === 3 ? selectedStack : crops;
+  const showingIntegratedStack = selectedStack.length === 3;
   const hasRecommendation = Boolean(currentRecommendation);
   const isAdaptive = Boolean(simulation);
   const apiStatus: ApiStatus = error
@@ -261,29 +271,55 @@ const Index = () => {
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2 px-1">
             <h2 className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
-              {hasRecommendation ? "Optimal Crop Selection" : "Awaiting Mission Plan"}
+              {hasRecommendation
+                ? showingIntegratedStack
+                  ? "Selected Biological Stack"
+                  : "Optimal Crop Selection"
+                : "Awaiting Mission Plan"}
             </h2>
             {currentRecommendation && (
               <span className="text-[10px] font-mono text-muted-foreground">
-                Primary system:{" "}
-                <span className="text-neon-cyan">
-                  {formatLabel(currentRecommendation.recommended_system).toUpperCase()}
-                </span>
+                {showingIntegratedStack ? (
+                  <>
+                    Integrated score:{" "}
+                    <span className="text-neon-cyan">
+                      {currentRecommendation.scores?.integrated?.toFixed(2) ?? "N/A"}
+                    </span>
+                    {" | "}Plant system:{" "}
+                    <span className="text-neon-cyan">
+                      {formatLabel(currentRecommendation.recommended_system).toUpperCase()}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    Primary system:{" "}
+                    <span className="text-neon-cyan">
+                      {formatLabel(currentRecommendation.recommended_system).toUpperCase()}
+                    </span>
+                  </>
+                )}
               </span>
             )}
           </div>
 
           <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {crops.length > 0 ? (
+            {visibleCards.length > 0 ? (
               <AnimatePresence mode="popLayout">
-                {crops.map((crop, index) => (
-                  <CropCard
-                    key={`${crop.name}-${simulation?.change_event || "base"}`}
-                    crop={crop}
-                    rank={index + 1}
-                    showChart={index === 0}
-                  />
-                ))}
+                {showingIntegratedStack
+                  ? selectedStack.map((domain) => (
+                      <DomainCard
+                        key={`${domain.type}-${domain.name}-${simulation?.change_event || "base"}`}
+                        domain={domain}
+                      />
+                    ))
+                  : crops.map((crop, index) => (
+                      <CropCard
+                        key={`${crop.name}-${simulation?.change_event || "base"}`}
+                        crop={crop}
+                        rank={index + 1}
+                        showChart={index === 0}
+                      />
+                    ))}
               </AnimatePresence>
             ) : (
               <div className="glass-panel col-span-full flex min-h-[280px] flex-col items-center justify-center gap-3 overflow-hidden p-6 text-center">
@@ -291,12 +327,12 @@ const Index = () => {
                   <>
                     <Loader2 className="h-8 w-8 animate-spin text-neon-cyan" />
                     <p className="text-sm font-mono text-foreground/80">
-                      Requesting recommendation from the backend and computing the top crop mix...
+                      Requesting recommendation from the backend and computing the integrated biological stack...
                     </p>
                   </>
                 ) : (
                   <p className="text-sm font-mono text-muted-foreground">
-                    Select the mission profile above and click Generate Plan to populate live crop recommendations.
+                    Select the mission profile above and click Generate Plan to populate the crop, algae, and microbial stack.
                   </p>
                 )}
               </div>
