@@ -66,6 +66,12 @@
   body {
     @apply bg-background text-foreground font-sans;
     font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  #root {
+    min-height: 100vh;
   }
 }
 
@@ -74,12 +80,14 @@
     @apply bg-glass border border-glass-border rounded-xl;
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
+    isolation: isolate;
   }
 
   .glass-panel-strong {
     @apply bg-glass-strong border border-glass-border rounded-xl;
     backdrop-filter: blur(30px);
     -webkit-backdrop-filter: blur(30px);
+    isolation: isolate;
   }
 
   .neon-glow-cyan {
@@ -114,6 +122,9 @@
     background: hsl(var(--glass-bg));
     border-radius: var(--radius);
     backdrop-filter: blur(20px);
+    isolation: isolate;
+    transform-origin: center;
+    will-change: transform;
   }
   .gradient-border-card::before {
     content: '';

@@ -12,8 +12,8 @@ const AIReasoning = ({ message, isAdaptive, error }: AIReasoningProps) => {
   const textColor = error ? "text-neon-red" : isAdaptive ? "text-neon-orange" : "text-foreground/80";
 
   return (
-    <div className="glass-panel p-3 space-y-2 h-full flex flex-col">
-      <div className="flex items-center justify-between">
+    <div className="glass-panel flex h-full min-h-[260px] min-w-0 flex-col overflow-hidden p-3 space-y-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
           {isAdaptive ? "Adaptive Reasoning" : "System Reasoning"}
         </h3>
@@ -22,8 +22,8 @@ const AIReasoning = ({ message, isAdaptive, error }: AIReasoningProps) => {
         </span>
       </div>
 
-      <div className="flex-1 bg-terminal rounded-lg p-3 border border-glass-border overflow-auto">
-        <p className={`text-xs font-mono leading-relaxed ${textColor}`}>{bodyText}</p>
+      <div className="min-h-0 flex-1 overflow-auto rounded-lg border border-glass-border bg-terminal p-3">
+        <p className={`break-words text-xs font-mono leading-relaxed ${textColor}`}>{bodyText}</p>
       </div>
     </div>
   );

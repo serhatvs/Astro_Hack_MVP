@@ -20,10 +20,10 @@ const CrisisPanel = ({ onSimulate, disabled, isSimulating, hasRecommendation, la
   const [crisisType, setCrisisType] = useState<CrisisType>("water");
 
   return (
-    <div className="glass-panel p-3 space-y-3 h-full flex flex-col">
+    <div className="glass-panel flex h-full min-h-[260px] min-w-0 flex-col overflow-hidden p-3 space-y-3">
       <h3 className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">Crisis Simulation</h3>
 
-      <div className="flex-1 flex flex-col justify-center gap-3">
+      <div className="flex min-h-0 flex-1 flex-col justify-center gap-3">
         <Select value={crisisType} onValueChange={(value) => setCrisisType(value as CrisisType)}>
           <SelectTrigger className="bg-muted/50 border-glass-border text-foreground h-8 text-sm">
             <SelectValue />

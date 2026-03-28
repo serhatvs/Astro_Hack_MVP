@@ -15,9 +15,9 @@ const LiveTelemetry = () => {
   }, []);
 
   return (
-    <div className="glass-panel p-3 space-y-2">
+    <div className="glass-panel min-w-0 overflow-hidden p-3 space-y-2">
       <h3 className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">Live Telemetry</h3>
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
         <TelemetryItem label="Ext. Temp" value={`${temp}°C`} />
         <TelemetryItem label="Rad Shield" value={radiation} alert={radiation !== "Nominal"} />
         <TelemetryItem label="Hab. Pressure" value={`${pressure} kPa`} />

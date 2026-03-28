@@ -216,107 +216,120 @@ const Index = () => {
   };
 
   return (
-    <div className="h-screen w-screen overflow-hidden bg-background p-3 flex flex-col gap-3">
-      <div className="glass-panel p-3">
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-neon-green blink" />
-              <h1 className="text-sm font-bold font-mono uppercase tracking-widest neon-text-cyan">
-                TUA Astro-Tarim Karar Motoru
-              </h1>
+    <div className="min-h-screen w-full overflow-x-hidden bg-background p-3">
+      <div className="mx-auto flex min-h-[calc(100vh-1.5rem)] w-full max-w-[1800px] flex-col gap-3">
+        <div className="glass-panel overflow-hidden p-3">
+          <div className="mb-2 flex flex-wrap items-start justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex min-w-0 items-center gap-2">
+                <div className="h-2 w-2 rounded-full bg-neon-green blink" />
+                <h1 className="truncate text-sm font-bold font-mono uppercase tracking-widest neon-text-cyan">
+                  TUA Astro-Tarim Karar Motoru
+                </h1>
+              </div>
+              <span className="rounded border border-glass-border px-1.5 py-0.5 text-[9px] font-mono text-muted-foreground">
+                v1.1
+              </span>
             </div>
-            <span className="text-[9px] font-mono text-muted-foreground border border-glass-border rounded px-1.5 py-0.5">
-              v1.1
-            </span>
+            <div className="hidden w-full max-w-sm shrink-0 lg:block">
+              <LiveTelemetry />
+            </div>
           </div>
-          <div className="hidden lg:block w-64">
-            <LiveTelemetry />
-          </div>
-        </div>
 
-        <MissionInput
-          environment={environment}
-          setEnvironment={setEnvironment}
-          duration={duration}
-          setDuration={setDuration}
-          waterLimit={waterLimit}
-          setWaterLimit={setWaterLimit}
-          energyLimit={energyLimit}
-          setEnergyLimit={setEnergyLimit}
-          areaLimit={areaLimit}
-          setAreaLimit={setAreaLimit}
-          goal={goal}
-          setGoal={setGoal}
-          onGenerate={handleGenerate}
-          isLoading={isGenerating}
-        />
+          <MissionInput
+            environment={environment}
+            setEnvironment={setEnvironment}
+            duration={duration}
+            setDuration={setDuration}
+            waterLimit={waterLimit}
+            setWaterLimit={setWaterLimit}
+            energyLimit={energyLimit}
+            setEnergyLimit={setEnergyLimit}
+            areaLimit={areaLimit}
+            setAreaLimit={setAreaLimit}
+            goal={goal}
+            setGoal={setGoal}
+            onGenerate={handleGenerate}
+            isLoading={isGenerating}
+          />
 
-        {error && (
-          <div className="mt-3 rounded border border-neon-red/40 bg-neon-red/10 px-3 py-2">
-            <p className="text-xs font-mono text-neon-red">Backend error: {error}</p>
-          </div>
-        )}
-      </div>
-
-      <div className="flex-1 min-h-0 flex flex-col">
-        <div className="flex items-center justify-between mb-1.5 px-1">
-          <h2 className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
-            {hasRecommendation ? "Optimal Crop Selection" : "Awaiting Mission Plan"}
-          </h2>
-          {currentRecommendation && (
-            <span className="text-[10px] font-mono text-muted-foreground">
-              Primary system: <span className="text-neon-cyan">{formatLabel(currentRecommendation.recommended_system).toUpperCase()}</span>
-            </span>
+          {error && (
+            <div className="mt-3 rounded border border-neon-red/40 bg-neon-red/10 px-3 py-2">
+              <p className="break-words text-xs font-mono text-neon-red">Backend error: {error}</p>
+            </div>
           )}
         </div>
 
-        <div className="flex-1 grid grid-cols-3 gap-3 min-h-0">
-          {crops.length > 0 ? (
-            <AnimatePresence mode="popLayout">
-              {crops.map((crop, index) => (
-                <CropCard
-                  key={`${crop.name}-${simulation?.change_event || "base"}`}
-                  crop={crop}
-                  rank={index + 1}
-                  showChart={index === 0}
-                />
-              ))}
-            </AnimatePresence>
-          ) : (
-            <div className="col-span-3 glass-panel p-6 flex flex-col items-center justify-center gap-3 text-center">
-              {isGenerating ? (
-                <>
-                  <Loader2 className="h-8 w-8 animate-spin text-neon-cyan" />
-                  <p className="text-sm font-mono text-foreground/80">
-                    Requesting recommendation from the backend and computing the top crop mix...
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2 px-1">
+            <h2 className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
+              {hasRecommendation ? "Optimal Crop Selection" : "Awaiting Mission Plan"}
+            </h2>
+            {currentRecommendation && (
+              <span className="text-[10px] font-mono text-muted-foreground">
+                Primary system:{" "}
+                <span className="text-neon-cyan">
+                  {formatLabel(currentRecommendation.recommended_system).toUpperCase()}
+                </span>
+              </span>
+            )}
+          </div>
+
+          <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {crops.length > 0 ? (
+              <AnimatePresence mode="popLayout">
+                {crops.map((crop, index) => (
+                  <CropCard
+                    key={`${crop.name}-${simulation?.change_event || "base"}`}
+                    crop={crop}
+                    rank={index + 1}
+                    showChart={index === 0}
+                  />
+                ))}
+              </AnimatePresence>
+            ) : (
+              <div className="glass-panel col-span-full flex min-h-[280px] flex-col items-center justify-center gap-3 overflow-hidden p-6 text-center">
+                {isGenerating ? (
+                  <>
+                    <Loader2 className="h-8 w-8 animate-spin text-neon-cyan" />
+                    <p className="text-sm font-mono text-foreground/80">
+                      Requesting recommendation from the backend and computing the top crop mix...
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-sm font-mono text-muted-foreground">
+                    Select the mission profile above and click Generate Plan to populate live crop recommendations.
                   </p>
-                </>
-              ) : (
-                <p className="text-sm font-mono text-muted-foreground">
-                  Select the mission profile above and click Generate Plan to populate live crop recommendations.
-                </p>
-              )}
-            </div>
-          )}
+                )}
+              </div>
+            )}
+          </div>
         </div>
-      </div>
 
-      <div className="grid grid-cols-4 gap-3" style={{ height: "28%" }}>
-        <SystemPanel recommendation={currentRecommendation} simulation={simulation} isLoading={isGenerating || isSimulating} />
-        <CrisisPanel
-          onSimulate={handleCrisis}
-          disabled={!hasRecommendation || isGenerating || isSimulating}
-          isSimulating={isSimulating}
-          hasRecommendation={hasRecommendation}
-          lastEvent={simulation?.change_event || null}
-        />
-        <AIReasoning
-          message={simulation?.adaptation_reason || currentRecommendation?.explanation || null}
-          isAdaptive={isAdaptive}
-          error={error}
-        />
-        <SystemTerminal entries={terminalEntries} apiStatus={apiStatus} />
+        <div className="grid auto-rows-fr grid-cols-1 gap-3 md:grid-cols-2 2xl:grid-cols-4">
+          <div className="min-h-[260px] min-w-0">
+            <SystemPanel recommendation={currentRecommendation} simulation={simulation} isLoading={isGenerating || isSimulating} />
+          </div>
+          <div className="min-h-[260px] min-w-0">
+            <CrisisPanel
+              onSimulate={handleCrisis}
+              disabled={!hasRecommendation || isGenerating || isSimulating}
+              isSimulating={isSimulating}
+              hasRecommendation={hasRecommendation}
+              lastEvent={simulation?.change_event || null}
+            />
+          </div>
+          <div className="min-h-[260px] min-w-0">
+            <AIReasoning
+              message={simulation?.adaptation_reason || currentRecommendation?.explanation || null}
+              isAdaptive={isAdaptive}
+              error={error}
+            />
+          </div>
+          <div className="min-h-[260px] min-w-0">
+            <SystemTerminal entries={terminalEntries} apiStatus={apiStatus} />
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -32,9 +32,9 @@ const SystemTerminal = ({ entries, apiStatus }: SystemTerminalProps) => {
   }, [entries]);
 
   return (
-    <div className="terminal-window p-2 h-full flex flex-col">
-      <div className="flex items-center justify-between gap-2 mb-1.5">
-        <div className="flex items-center gap-1.5">
+    <div className="terminal-window flex h-full min-h-[260px] min-w-0 flex-col overflow-hidden p-2">
+      <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-1.5">
           <span className="w-2 h-2 rounded-full bg-neon-red" />
           <span className="w-2 h-2 rounded-full bg-neon-gold" />
           <span className="w-2 h-2 rounded-full bg-neon-green" />
@@ -44,9 +44,9 @@ const SystemTerminal = ({ entries, apiStatus }: SystemTerminalProps) => {
           {apiStatus}
         </span>
       </div>
-      <div ref={containerRef} className="flex-1 overflow-auto space-y-0.5 min-h-0">
+      <div ref={containerRef} className="min-h-0 flex-1 overflow-auto space-y-0.5">
         {entries.map((entry, index) => (
-          <p key={`${entry.text}-${index}`} className={`text-[10px] font-mono leading-tight ${lineStyles[entry.level]}`}>
+          <p key={`${entry.text}-${index}`} className={`break-words text-[10px] font-mono leading-tight ${lineStyles[entry.level]}`}>
             {entry.text}
           </p>
         ))}

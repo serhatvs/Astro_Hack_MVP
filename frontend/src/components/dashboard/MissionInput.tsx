@@ -40,9 +40,9 @@ const MissionInput = ({
   };
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <div className="space-y-1">
+    <div className="flex min-w-0 flex-col gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="min-w-0 space-y-1">
           <label className="text-xs font-mono uppercase tracking-wider text-muted-foreground">Environment</label>
           <Select value={environment} onValueChange={setEnvironment}>
             <SelectTrigger className="bg-muted/50 border-glass-border text-foreground h-8 text-sm">
@@ -56,7 +56,7 @@ const MissionInput = ({
           </Select>
         </div>
 
-        <div className="space-y-1">
+        <div className="min-w-0 space-y-1">
           <label className="text-xs font-mono uppercase tracking-wider text-muted-foreground">Duration</label>
           <Select value={duration} onValueChange={setDuration}>
             <SelectTrigger className="bg-muted/50 border-glass-border text-foreground h-8 text-sm">
@@ -70,7 +70,7 @@ const MissionInput = ({
           </Select>
         </div>
 
-        <div className="space-y-1">
+        <div className="min-w-0 space-y-1">
           <label className="text-xs font-mono uppercase tracking-wider text-muted-foreground">Optimization Goal</label>
           <Select value={goal} onValueChange={setGoal}>
             <SelectTrigger className="bg-muted/50 border-glass-border text-foreground h-8 text-sm">
@@ -84,7 +84,7 @@ const MissionInput = ({
           </Select>
         </div>
 
-        <div className="flex items-end">
+        <div className="flex min-w-0 items-end">
           <Button
             onClick={onGenerate}
             disabled={isLoading}
@@ -95,8 +95,8 @@ const MissionInput = ({
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-4">
-        <div className="space-y-1">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div className="min-w-0 space-y-1">
           <div className="flex justify-between">
             <label className="text-xs font-mono uppercase tracking-wider text-neon-cyan">Water Limit</label>
             <span className="text-xs font-mono text-neon-cyan">{waterLimit[0]}% | {constraintLevel(waterLimit[0])}</span>
@@ -104,7 +104,7 @@ const MissionInput = ({
           <Slider value={waterLimit} onValueChange={setWaterLimit} max={100} step={1}
             className="[&_[role=slider]]:bg-neon-cyan [&_[role=slider]]:border-neon-cyan [&_.range]:bg-neon-cyan/50" />
         </div>
-        <div className="space-y-1">
+        <div className="min-w-0 space-y-1">
           <div className="flex justify-between">
             <label className="text-xs font-mono uppercase tracking-wider text-neon-gold">Energy Limit</label>
             <span className="text-xs font-mono text-neon-gold">{energyLimit[0]}% | {constraintLevel(energyLimit[0])}</span>
@@ -112,7 +112,7 @@ const MissionInput = ({
           <Slider value={energyLimit} onValueChange={setEnergyLimit} max={100} step={1}
             className="[&_[role=slider]]:bg-neon-gold [&_[role=slider]]:border-neon-gold [&_.range]:bg-neon-gold/50" />
         </div>
-        <div className="space-y-1">
+        <div className="min-w-0 space-y-1">
           <div className="flex justify-between">
             <label className="text-xs font-mono uppercase tracking-wider text-neon-purple">Area Limit</label>
             <span className="text-xs font-mono text-neon-purple">{areaLimit[0]}% | {constraintLevel(areaLimit[0])}</span>

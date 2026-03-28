@@ -17,9 +17,9 @@ const toWidth = (value: number) => `${Math.max(6, Math.round(value * 100))}%`;
 const SystemPanel = ({ recommendation, simulation, isLoading }: SystemPanelProps) => {
   if (!recommendation) {
     return (
-      <div className="glass-panel p-3 space-y-3 h-full">
+      <div className="glass-panel flex h-full min-h-[260px] min-w-0 flex-col overflow-hidden p-3 space-y-3">
         <h3 className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">System & Resources</h3>
-        <div className="h-full flex items-center justify-center text-center">
+        <div className="flex min-h-0 flex-1 items-center justify-center text-center">
           <p className="text-xs font-mono text-muted-foreground">
             {isLoading ? "Requesting mission plan from the backend..." : "Generate a mission plan to view the selected system, resources, and risk posture."}
           </p>
@@ -43,13 +43,13 @@ const SystemPanel = ({ recommendation, simulation, isLoading }: SystemPanelProps
   ];
 
   return (
-    <div className="glass-panel p-3 space-y-3 h-full">
+    <div className="glass-panel flex h-full min-h-[260px] min-w-0 flex-col overflow-hidden p-3 space-y-3">
       <h3 className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">System & Resources</h3>
 
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
           <Cpu className="h-4 w-4 text-neon-cyan" />
-          <span className="font-mono text-sm font-bold neon-text-cyan">{formatLabel(recommended_system).toUpperCase()}</span>
+          <span className="break-words font-mono text-sm font-bold neon-text-cyan">{formatLabel(recommended_system).toUpperCase()}</span>
         </div>
         {simulation && (
           <span className={`px-2 py-0.5 rounded border text-[10px] font-mono ${simulation.system_changed ? "border-neon-orange/50 text-neon-orange" : "border-glass-border text-muted-foreground"}`}>
@@ -58,7 +58,7 @@ const SystemPanel = ({ recommendation, simulation, isLoading }: SystemPanelProps
         )}
       </div>
 
-      <p className="text-[11px] leading-relaxed text-foreground/75">{system_reason}</p>
+      <p className="break-words text-[11px] leading-relaxed text-foreground/75">{system_reason}</p>
 
       <div className="space-y-2">
         {resources.map((resource) => (
@@ -74,7 +74,7 @@ const SystemPanel = ({ recommendation, simulation, isLoading }: SystemPanelProps
         ))}
       </div>
 
-      <div className="grid grid-cols-2 gap-2 text-[10px] font-mono text-muted-foreground">
+      <div className="grid grid-cols-1 gap-2 text-[10px] font-mono text-muted-foreground sm:grid-cols-2">
         <div className="rounded border border-glass-border p-2">
           <p>Calorie Output</p>
           <p className="text-neon-green text-sm">{toPercent(resource_plan.calorie_score)}</p>
@@ -89,7 +89,7 @@ const SystemPanel = ({ recommendation, simulation, isLoading }: SystemPanelProps
         RISK: {risk_analysis.level.toUpperCase()} ({toPercent(risk_analysis.score)})
       </div>
 
-      <div className="space-y-1">
+      <div className="min-h-0 flex-1 space-y-1 overflow-auto pr-1">
         {risk_analysis.factors.slice(0, 2).map((factor) => (
           <p key={factor} className="text-[10px] font-mono text-muted-foreground">
             - {factor}
@@ -98,7 +98,7 @@ const SystemPanel = ({ recommendation, simulation, isLoading }: SystemPanelProps
       </div>
 
       {simulation && (
-        <p className="text-[10px] font-mono text-muted-foreground">
+        <p className="break-words text-[10px] font-mono text-muted-foreground">
           {simulation.system_changed
             ? `System moved from ${formatLabel(simulation.previous_system || "unknown")} to ${formatLabel(simulation.new_system || "unknown")}.`
             : `Latest adaptation kept ${formatLabel(simulation.new_system || recommended_system)} as the primary system.`}
