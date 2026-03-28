@@ -1,9 +1,19 @@
-import type { RecommendationResponse, MissionPayload, SimulationPayload, SimulationResponse } from "@/lib/types";
+import type {
+  DemoCase,
+  HealthResponse,
+  MissionPayload,
+  RecommendationResponse,
+  SimulationPayload,
+  SimulationResponse,
+} from "@/lib/types";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.trim() || "http://localhost:8000";
+const BASE_URL =
+  import.meta.env.VITE_API_URL?.trim() ||
+  import.meta.env.VITE_API_BASE_URL?.trim() ||
+  "http://localhost:8000";
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetch(`${BASE_URL}${path}`, {
     headers: {
       "Content-Type": "application/json",
       ...(options?.headers || {}),
@@ -44,4 +54,12 @@ export function simulateMission(payload: SimulationPayload): Promise<SimulationR
   });
 }
 
-export { API_BASE_URL };
+export function fetchDemoCases(): Promise<DemoCase[]> {
+  return request<DemoCase[]>("/demo-cases");
+}
+
+export function fetchHealth(): Promise<HealthResponse> {
+  return request<HealthResponse>("/health");
+}
+
+export { BASE_URL };

@@ -13,6 +13,19 @@ export type RiskLevel = "low" | "moderate" | "high";
 export type RiskDelta = "increased" | "decreased" | "unchanged";
 export type ApiStatus = "idle" | "loading" | "ready" | "warning" | "error";
 
+export interface DemoCase {
+  name: string;
+  environment: Environment;
+  duration: Duration;
+  constraints: MissionConstraints;
+  goal: BackendGoal;
+}
+
+export interface HealthResponse {
+  status: string;
+  service: string;
+}
+
 export interface MissionConstraints {
   water: ConstraintLevel;
   energy: ConstraintLevel;
