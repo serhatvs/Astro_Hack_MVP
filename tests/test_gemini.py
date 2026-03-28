@@ -77,7 +77,7 @@ def test_gemini_client_parses_fenced_json(monkeypatch) -> None:
     analysis = GeminiClient().analyze({"request_context": {"source": "recommend"}})
 
     assert analysis is not None
-    assert analysis.reasoning_summary == "The deterministic stack is well balanced."
+    assert analysis.reasoning_summary == "The deterministic stack is well balanced. -gemini"
     assert analysis.weaknesses == ["Microbial risk remains elevated."]
     assert analysis.improvements == []
     assert analysis.alternative["crop"] == "spinach"

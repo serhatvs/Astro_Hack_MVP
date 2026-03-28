@@ -74,10 +74,15 @@ class GeminiClient:
             return None
 
         logger.info("Gemini analysis succeeded.")
-        return LLMAnalysis.from_payload(
+        analysis = LLMAnalysis.from_payload(
             parsed,
             default_reasoning="Gemini returned incomplete analysis; deterministic fallback remains active.",
         )
+        if not analysis.reasoning_summary.endswith(" -gemini"):
+            analysis = analysis.model_copy(
+                update={"reasoning_summary": f"{analysis.reasoning_summary} -gemini"}
+            )
+        return analysis
 
     def _build_prompt(self, payload: dict[str, Any]) -> str:
         schema = {
