@@ -1,15 +1,13 @@
 import { useState } from "react";
-import { AnimatePresence } from "framer-motion";
 import { Loader2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
 import MissionInput from "@/components/dashboard/MissionInput";
 import LiveTelemetry from "@/components/dashboard/LiveTelemetry";
-import CropCard from "@/components/dashboard/CropCard";
-import DomainCard from "@/components/dashboard/DomainCard";
 import SimulationLauncher from "@/components/dashboard/SimulationLauncher";
 import { recommendMission, startSimulation } from "@/lib/api";
+import { buildLayerSummaries, formatLabel, getExecutiveSummary, isGeminiUsed } from "@/lib/mission-view";
 import type {
   BackendGoal,
   ConstraintLevel,
@@ -26,15 +24,6 @@ const goalMap: Record<UiGoal, BackendGoal> = {
   water: "water_efficiency",
   low_maintenance: "low_maintenance",
 };
-
-const formatLabel = (value: string) =>
-  value.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
-
-const uiNoteKeyByDomain = {
-  crop: "crop_note",
-  algae: "algae_note",
-  microbial: "microbial_note",
-} as const;
 
 const Index = () => {
   const navigate = useNavigate();
@@ -61,18 +50,9 @@ const Index = () => {
   });
 
   const currentRecommendation = recommendation;
-  const crops = currentRecommendation?.top_crops ?? [];
-  const geminiReasoningSummary = currentRecommendation?.llm_analysis?.reasoning_summary?.trim() ?? "";
-  const geminiUsed = geminiReasoningSummary.endsWith(" -gemini");
-  const selectedStack = currentRecommendation?.selected_system
-    ? [
-        currentRecommendation.selected_system.crop,
-        currentRecommendation.selected_system.algae,
-        currentRecommendation.selected_system.microbial,
-      ]
-    : [];
-  const visibleCards = selectedStack.length === 3 ? selectedStack : crops;
-  const showingIntegratedStack = selectedStack.length === 3;
+  const geminiUsed = isGeminiUsed(currentRecommendation?.llm_analysis?.reasoning_summary);
+  const layerSummaries = buildLayerSummaries(currentRecommendation);
+  const executiveSummary = getExecutiveSummary(currentRecommendation);
   const hasRecommendation = Boolean(currentRecommendation);
 
   const handleGenerate = async () => {
@@ -84,9 +64,13 @@ const Index = () => {
     try {
       const response = await recommendMission(missionPayload);
       setRecommendation(response);
+      const leadLabel =
+        response.selected_system?.crop?.name ||
+        response.top_crops?.[0]?.name ||
+        "the selected stack";
 
       toast.success("Mission plan generated", {
-        description: `${formatLabel(response.top_crops[0].name)} ranked first for the selected mission profile.`,
+        description: `${formatLabel(leadLabel)} is ready for the selected mission profile.`,
       });
     } catch (requestError) {
       const message = requestError instanceof Error ? requestError.message : "Unable to reach the backend.";
@@ -169,17 +153,18 @@ const Index = () => {
           )}
         </div>
 
-        <div className="flex min-h-0 flex-1 flex-col">
-          <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2 px-1">
-            <h2 className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
-              {hasRecommendation
-                ? showingIntegratedStack
-                  ? "Selected Biological Stack"
-                  : "Optimal Crop Selection"
-                : "Awaiting Mission Plan"}
-            </h2>
-            {currentRecommendation && (
-              <div className="flex flex-wrap items-center justify-end gap-2 text-[10px] font-mono text-muted-foreground">
+        {hasRecommendation && currentRecommendation && (
+          <div className="glass-panel flex min-w-0 flex-col gap-4 overflow-hidden p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="space-y-1">
+                <h2 className="text-[10px] font-mono uppercase tracking-[0.24em] text-muted-foreground">
+                  Mission Summary
+                </h2>
+                <p className="max-w-4xl text-sm text-foreground/80">
+                  {executiveSummary || "Recommendation prepared. Adjust the ecosystem layers below before starting the simulation."}
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono text-muted-foreground">
                 <span
                   className={`rounded border px-1.5 py-0.5 uppercase tracking-wider ${
                     geminiUsed
@@ -192,68 +177,74 @@ const Index = () => {
                 <span className={geminiUsed ? "text-neon-cyan" : "text-muted-foreground"}>
                   {geminiUsed ? "Gemini kullanildi" : "Gemini kullanilmadi"}
                 </span>
-                {showingIntegratedStack ? (
-                  <>
-                    Integrated score:{" "}
-                    <span className="text-neon-cyan">
-                      {currentRecommendation.scores?.integrated?.toFixed(2) ?? "N/A"}
-                    </span>
-                    {" | "}Plant system:{" "}
-                    <span className="text-neon-cyan">
-                      {formatLabel(currentRecommendation.recommended_system).toUpperCase()}
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    Primary system:{" "}
-                    <span className="text-neon-cyan">
-                      {formatLabel(currentRecommendation.recommended_system).toUpperCase()}
-                    </span>
-                  </>
-                )}
+                <span>
+                  Integrated score:{" "}
+                  <span className="text-neon-cyan">
+                    {currentRecommendation.scores?.integrated?.toFixed(2) ?? "N/A"}
+                  </span>
+                </span>
+                <span>
+                  Plant system:{" "}
+                  <span className="text-neon-cyan">
+                    {formatLabel(currentRecommendation.recommended_system).toUpperCase()}
+                  </span>
+                </span>
               </div>
-            )}
-          </div>
+            </div>
 
-          <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {visibleCards.length > 0 ? (
-              <AnimatePresence mode="popLayout">
-                {showingIntegratedStack
-                  ? selectedStack.map((domain) => (
-                      <DomainCard
-                        key={`${domain.type}-${domain.name}-base`}
-                        domain={domain}
-                        rankedCandidates={currentRecommendation?.ranked_candidates?.[domain.type] ?? []}
-                        summaryOverride={currentRecommendation?.ui_enhanced?.[uiNoteKeyByDomain[domain.type]] ?? null}
-                      />
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1.3fr_0.7fr]">
+              <div className="rounded-lg border border-glass-border bg-black/10 p-3">
+                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+                  Prepared Ecosystem Seed
+                </p>
+                <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                  {layerSummaries.length > 0 ? (
+                    layerSummaries.map((layer) => (
+                      <div key={layer.type} className="rounded border border-glass-border/70 bg-muted/10 px-3 py-2">
+                        <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+                          {layer.label}
+                        </p>
+                        <p className="mt-1 text-sm font-semibold text-foreground">{formatLabel(layer.name)}</p>
+                        <p className="mt-1 text-xs text-foreground/75">{layer.summary}</p>
+                      </div>
                     ))
-                  : crops.map((crop, index) => (
-                      <CropCard
-                        key={`${crop.name}-base`}
-                        crop={crop}
-                        rank={index + 1}
-                        showChart={index === 0}
-                      />
-                    ))}
-              </AnimatePresence>
-            ) : (
-              <div className="glass-panel col-span-full flex min-h-[280px] flex-col items-center justify-center gap-3 overflow-hidden p-6 text-center">
-                {isGenerating ? (
-                  <>
-                    <Loader2 className="h-8 w-8 animate-spin text-neon-cyan" />
-                    <p className="text-sm font-mono text-foreground/80">
-                      Requesting recommendation from the backend and computing the integrated biological stack...
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      The recommendation exists, but stack detail fields were missing. The simulation launcher below can
+                      still use the available mission output safely.
                     </p>
-                  </>
-                ) : (
-                  <p className="text-sm font-mono text-muted-foreground">
-                    Select the mission profile above and click Generate Plan to populate the crop, algae, and microbial stack.
-                  </p>
-                )}
+                  )}
+                </div>
               </div>
+
+              <div className="rounded-lg border border-neon-orange/25 bg-neon-orange/5 p-3">
+                <p className="text-[10px] font-mono uppercase tracking-wider text-neon-orange">Operational Note</p>
+                <p className="mt-2 text-xs leading-relaxed text-foreground/80">
+                  {currentRecommendation.operational_note ||
+                    "The recommendation is ready. Launch simulation to stress the loop and inspect adaptation."}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {!hasRecommendation && (
+          <div className="glass-panel flex min-h-[180px] flex-col items-center justify-center gap-3 overflow-hidden p-6 text-center">
+            {isGenerating ? (
+              <>
+                <Loader2 className="h-8 w-8 animate-spin text-neon-cyan" />
+                <p className="text-sm font-mono text-foreground/80">
+                  Requesting recommendation from the backend and preparing a simulation-ready mission seed...
+                </p>
+              </>
+            ) : (
+              <p className="text-sm font-mono text-muted-foreground">
+                Configure the mission above and click Generate Plan. The recommendation will be stored internally and
+                used to prefill the simulation launcher below.
+              </p>
             )}
           </div>
-        </div>
+        )}
 
         <div className="min-w-0 overflow-hidden rounded-xl">
           <SimulationLauncher

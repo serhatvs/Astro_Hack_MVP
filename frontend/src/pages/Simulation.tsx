@@ -1,12 +1,12 @@
 import { useMemo, useState } from "react";
-import { ArrowLeft, FlaskConical, Loader2, Orbit, Play, ShieldAlert, Waves, Zap } from "lucide-react";
+import { ArrowDownRight, ArrowLeft, ArrowRight, ArrowUpRight, FlaskConical, Loader2, Orbit, Play, ShieldAlert, Waves, Zap } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { toast } from "sonner";
 
-import DomainCard from "@/components/dashboard/DomainCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { stepMission } from "@/lib/api";
+import { buildLayerSummaries, formatLabel, getExecutiveSummary } from "@/lib/mission-view";
 import type {
   MissionEventsPayload,
   MissionStepResponse,
@@ -19,15 +19,6 @@ type SimulationSession = MissionStepResponse | SimulationStartResponse;
 interface SimulationRouteState {
   session?: SimulationStartResponse;
 }
-
-const uiNoteKeyByDomain = {
-  crop: "crop_note",
-  algae: "algae_note",
-  microbial: "microbial_note",
-} as const;
-
-const formatLabel = (value: string) =>
-  value.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
 
 const statusClass = (status: MissionStatus) => {
   if (status === "CRITICAL") {
@@ -64,6 +55,7 @@ const Simulation = () => {
   }, [location.state]);
 
   const [session, setSession] = useState<SimulationSession | null>(initialSession);
+  const [previousSession, setPreviousSession] = useState<SimulationSession | null>(null);
   const [timeStep, setTimeStep] = useState("1");
   const [waterDrop, setWaterDrop] = useState("");
   const [energyDrop, setEnergyDrop] = useState("");
@@ -97,15 +89,22 @@ const Simulation = () => {
     );
   }
 
-  const selectedStack = [
-    session.selected_system.crop,
-    session.selected_system.algae,
-    session.selected_system.microbial,
-  ];
+  const layerSummaries = buildLayerSummaries(session);
+  const cropLayer = layerSummaries.find((layer) => layer.type === "crop");
   const missionState = session.mission_state;
   const latestEvents = "events" in session ? session.events ?? null : null;
   const systemChanges = "system_changes" in session ? session.system_changes : [];
   const riskDelta = "risk_delta" in session ? session.risk_delta : null;
+  const executiveSummary = getExecutiveSummary(session);
+  const reasoningSummary =
+    session.llm_analysis?.reasoning_summary ||
+    session.explanations?.system_reasoning ||
+    "Deterministic simulation analysis is active for this ecosystem session.";
+  const improvementCues = session.llm_analysis?.improvements ?? [];
+  const alternativeText =
+    Object.values(session.llm_analysis?.alternative ?? {})
+      .slice(0, 2)
+      .join(" / ") || "None suggested";
   const adaptationSummary =
     ("adaptation_summary" in session ? session.adaptation_summary : "") ||
     session.ui_enhanced.adaptation_summary ||
@@ -122,6 +121,24 @@ const Simulation = () => {
     },
     { label: "Risk Level", value: missionState.system_metrics.risk_level, accent: "bg-neon-red" },
   ];
+  const layerTransitions = previousSession
+    ? layerSummaries
+        .map((layer) => {
+          const previous = buildLayerSummaries(previousSession).find((item) => item.type === layer.type);
+          if (!previous) {
+            return null;
+          }
+          return {
+            label: layer.label,
+            previousName: previous.name,
+            currentName: layer.name,
+            previousRank: previous.rank,
+            currentRank: layer.rank,
+            changed: previous.name !== layer.name || previous.rank !== layer.rank,
+          };
+        })
+        .filter((item): item is NonNullable<typeof item> => Boolean(item))
+    : [];
 
   const handleApplyStep = async () => {
     const parsedTimeStep = Math.max(1, Math.min(365, Number.parseInt(timeStep || "1", 10) || 1));
@@ -146,11 +163,13 @@ const Simulation = () => {
 
     setIsApplyingStep(true);
     try {
+      const currentSession = session;
       const response = await stepMission({
         mission_id: missionState.mission_id,
         time_step: parsedTimeStep,
         events: Object.keys(events).length > 0 ? events : undefined,
       });
+      setPreviousSession(currentSession);
       setSession(response);
       setWaterDrop("");
       setEnergyDrop("");
@@ -183,7 +202,7 @@ const Simulation = () => {
                 </span>
               </div>
               <p className="max-w-4xl text-sm text-foreground/80">
-                {session.ui_enhanced.executive_summary || session.explanations.executive_summary}
+                {executiveSummary || "Simulation session is active."}
               </p>
               <div className="flex flex-wrap gap-3 text-[11px] font-mono text-muted-foreground">
                 <span>Environment: <span className="text-foreground">{formatLabel(missionState.environment)}</span></span>
@@ -193,7 +212,7 @@ const Simulation = () => {
                 <span>
                   Plant system:{" "}
                   <span className="text-neon-cyan">
-                    {formatLabel(session.selected_system.crop.support_system || "unknown")}
+                    {formatLabel(cropLayer?.supportSystem || "unknown")}
                   </span>
                 </span>
               </div>
@@ -214,15 +233,71 @@ const Simulation = () => {
           </div>
         </div>
 
-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 xl:grid-cols-3">
-          {selectedStack.map((domain) => (
-            <DomainCard
-              key={`${domain.type}-${domain.name}-${missionState.time}`}
-              domain={domain}
-              rankedCandidates={session.ranked_candidates[domain.type]}
-              summaryOverride={session.ui_enhanced[uiNoteKeyByDomain[domain.type]]}
-            />
-          ))}
+        <div className="glass-panel flex min-w-0 flex-col gap-4 overflow-hidden p-4">
+          <div className="flex items-center gap-2">
+            <Orbit className="h-4 w-4 text-neon-cyan" />
+            <h2 className="text-[10px] font-mono uppercase tracking-[0.24em] text-muted-foreground">
+              Active Ecosystem Stack
+            </h2>
+          </div>
+          <div className="space-y-3">
+            {layerSummaries.length > 0 ? (
+              layerSummaries.map((layer) => (
+                <div
+                  key={`${layer.type}-${layer.name}-${missionState.time}`}
+                  className="rounded-lg border border-glass-border bg-black/10 p-4"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0 space-y-1">
+                      <div className={`inline-flex rounded-md border px-2 py-0.5 text-[10px] font-mono uppercase tracking-wider ${layer.accentClass}`}>
+                        {layer.label}
+                      </div>
+                      <h3 className="text-lg font-semibold text-foreground">{formatLabel(layer.name)}</h3>
+                      <p className="max-w-4xl text-sm leading-relaxed text-foreground/78">{layer.summary}</p>
+                    </div>
+                    <div className="grid min-w-[180px] grid-cols-2 gap-2 text-right text-[10px] font-mono text-muted-foreground">
+                      <div>
+                        <p>Mission Fit</p>
+                        <p className="text-sm text-foreground">{Math.round(layer.missionFitScore * 100)}%</p>
+                      </div>
+                      <div>
+                        <p>Risk</p>
+                        <p className="text-sm text-foreground">{Math.round(layer.riskScore * 100)}%</p>
+                      </div>
+                      <div>
+                        <p>Domain Score</p>
+                        <p className="text-sm text-foreground">{layer.domainScore.toFixed(2)}</p>
+                      </div>
+                      <div>
+                        <p>Current Rank</p>
+                        <p className="text-sm text-foreground">{layer.rank ? `#${layer.rank}` : "N/A"}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap items-center gap-3 text-[10px] font-mono text-muted-foreground">
+                    {layer.type === "crop" && (
+                      <span>
+                        Support system:{" "}
+                        <span className="text-neon-cyan">
+                          {formatLabel(layer.supportSystem || "unknown")}
+                        </span>
+                      </span>
+                    )}
+                    <span>
+                      Ranked candidates available:{" "}
+                      <span className="text-foreground">{session.ranked_candidates?.[layer.type]?.length ?? 0}</span>
+                    </span>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="rounded-lg border border-glass-border bg-black/10 p-4 text-sm text-muted-foreground">
+                Selected ecosystem detail fields were incomplete, so the simulation is falling back to metrics and
+                mission-state data only.
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="grid auto-rows-[minmax(260px,1fr)] grid-cols-1 gap-3 xl:grid-cols-[1.1fr_0.9fr]">
@@ -347,6 +422,64 @@ const Simulation = () => {
                 </p>
               )}
             </div>
+
+            <div className="min-h-0 overflow-auto rounded-lg border border-glass-border bg-muted/10 p-3">
+              <p className="mb-2 text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Layer Changes</p>
+              {layerTransitions.some((item) => item.changed) ? (
+                <div className="space-y-2 text-xs text-foreground/80">
+                  {layerTransitions
+                    .filter((item) => item.changed)
+                    .map((item) => {
+                      const rankDirection =
+                        item.previousRank !== null && item.currentRank !== null
+                          ? item.currentRank < item.previousRank
+                            ? "up"
+                            : item.currentRank > item.previousRank
+                              ? "down"
+                              : "same"
+                          : "same";
+                      return (
+                        <div key={item.label} className="rounded border border-glass-border/70 bg-black/10 p-2">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                              {item.label}
+                            </span>
+                            {rankDirection === "up" ? (
+                              <span className="inline-flex items-center gap-1 text-neon-green">
+                                <ArrowUpRight className="h-3 w-3" />
+                                Rank improved
+                              </span>
+                            ) : rankDirection === "down" ? (
+                              <span className="inline-flex items-center gap-1 text-neon-red">
+                                <ArrowDownRight className="h-3 w-3" />
+                                Rank dropped
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-muted-foreground">
+                                <ArrowRight className="h-3 w-3" />
+                                Re-evaluated
+                              </span>
+                            )}
+                          </div>
+                          <p className="mt-1">
+                            {formatLabel(item.previousName)} <ArrowRight className="mx-1 inline h-3 w-3" />
+                            {formatLabel(item.currentName)}
+                          </p>
+                          <p className="mt-1 text-muted-foreground">
+                            Rank {item.previousRank ? `#${item.previousRank}` : "N/A"}{" "}
+                            <ArrowRight className="mx-1 inline h-3 w-3" />
+                            {item.currentRank ? `#${item.currentRank}` : "N/A"}
+                          </p>
+                        </div>
+                      );
+                    })}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  No layer switch or visible rank shift has occurred yet in this simulation session.
+                </p>
+              )}
+            </div>
           </div>
 
           <div className="glass-panel flex min-h-[220px] min-w-0 flex-col gap-3 overflow-hidden p-4">
@@ -359,7 +492,7 @@ const Simulation = () => {
 
             <div className="rounded-lg border border-glass-border bg-terminal p-3">
               <p className="text-xs font-mono leading-relaxed text-foreground/80">
-                {session.llm_analysis.reasoning_summary}
+                {reasoningSummary}
               </p>
             </div>
 
@@ -384,10 +517,10 @@ const Simulation = () => {
               <div className="rounded-lg border border-glass-border bg-muted/10 p-3">
                 <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Improvement Cues</p>
                 <div className="mt-2 space-y-1 text-xs text-foreground/80">
-                  {session.llm_analysis.improvements.slice(0, 3).map((item) => (
+                  {improvementCues.slice(0, 3).map((item) => (
                     <p key={item}>{item}</p>
                   ))}
-                  {session.llm_analysis.improvements.length === 0 && (
+                  {improvementCues.length === 0 && (
                     <p className="text-muted-foreground">No additional refinement cue was raised for the current state.</p>
                   )}
                 </div>
@@ -402,7 +535,7 @@ const Simulation = () => {
               <div className="rounded-lg border border-glass-border bg-muted/10 p-3">
                 <p>Alternative Concept</p>
                 <p className="mt-1 text-foreground">
-                  {Object.values(session.llm_analysis.alternative).slice(0, 2).join(" / ") || "None suggested"}
+                  {alternativeText}
                 </p>
               </div>
             </div>
