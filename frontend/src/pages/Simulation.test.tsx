@@ -1,7 +1,8 @@
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
+import { clearSimulationSession, saveSimulationSession } from "@/lib/simulation-session";
 import Simulation from "@/pages/Simulation";
 import type { SimulationStartResponse } from "@/lib/types";
 
@@ -130,6 +131,10 @@ const session: SimulationStartResponse = {
 };
 
 describe("Simulation page", () => {
+  afterEach(() => {
+    clearSimulationSession();
+  });
+
   it("shows an empty-state fallback when opened without a session", () => {
     render(
       <MemoryRouter initialEntries={["/simulation"]}>
@@ -156,5 +161,20 @@ describe("Simulation page", () => {
     expect(screen.getByText("Chlorella Vulgaris")).toBeInTheDocument();
     expect(screen.getByText("Saccharomyces Boulardii")).toBeInTheDocument();
     expect(screen.getByText("Custom simulation executive summary")).toBeInTheDocument();
+  });
+
+  it("restores the latest simulation session from localStorage on refresh", () => {
+    saveSimulationSession(session, null);
+
+    render(
+      <MemoryRouter initialEntries={["/simulation"]}>
+        <Routes>
+          <Route path="/simulation" element={<Simulation />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText("Lactuca Sativa (Marul)")).toBeInTheDocument();
+    expect(screen.getByText("Deterministic Simulation")).toBeInTheDocument();
   });
 });

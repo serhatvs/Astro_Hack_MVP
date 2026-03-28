@@ -12,7 +12,7 @@ from app.models.mission import (
     MissionConstraints,
     MissionProfile,
 )
-from app.models.response import LLMAnalysis, SimulationRequest, UIEnhancedNarrative
+from app.models.response import LLMAnalysis, SimulationRequest, SimulationStartRequest, UIEnhancedNarrative
 from app.services.data_provider import JSONDataProvider
 from app.services.recommender import RecommendationEngine
 
@@ -113,6 +113,18 @@ def test_gemini_client_returns_none_on_invalid_json(monkeypatch) -> None:
     assert analysis is None
 
 
+def test_gemini_client_respects_use_llm_false(monkeypatch) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    _install_fake_google(monkeypatch, '{"ui_layer": {}, "debug_layer": {"reasoning_summary": "Should not run."}}')
+
+    analysis = GeminiClient().analyze(
+        {"request_context": {"source": "simulate"}},
+        use_llm=False,
+    )
+
+    assert analysis is None
+
+
 def test_recommend_payload_sent_to_gemini_includes_context(monkeypatch) -> None:
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     engine = RecommendationEngine(provider=JSONDataProvider())
@@ -153,7 +165,7 @@ def test_recommend_payload_sent_to_gemini_includes_context(monkeypatch) -> None:
     assert "ui_layer" not in payload
 
 
-def test_simulate_generates_delta_aware_llm_analysis(monkeypatch) -> None:
+def test_simulate_is_deterministic_and_does_not_call_gemini(monkeypatch) -> None:
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     engine = RecommendationEngine(provider=JSONDataProvider())
     baseline = engine.recommend(_build_mission())
@@ -177,17 +189,43 @@ def test_simulate_generates_delta_aware_llm_analysis(monkeypatch) -> None:
         )
     )
 
-    assert len(capture.payloads) == 1
-    simulate_payload = capture.payloads[-1]
-    assert simulate_payload["request_context"]["source"] == "simulate"
-    assert simulate_payload["deltas"]["ranking_diff"] == response.ranking_diff
-    assert simulate_payload["deltas"]["risk_score_delta"] == response.risk_score_delta
+    assert capture.payloads == []
     assert "simulation update" in response.updated_recommendation.llm_analysis.reasoning_summary.lower()
     assert response.updated_recommendation.ui_enhanced.adaptation_summary
     assert response.updated_recommendation.ui_enhanced.crop_note
 
 
-def test_mission_step_generates_state_and_event_aware_llm_analysis(monkeypatch) -> None:
+def test_start_simulation_is_deterministic_and_does_not_call_gemini(monkeypatch) -> None:
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    engine = RecommendationEngine(provider=JSONDataProvider())
+    baseline = engine.recommend(_build_mission())
+
+    class CaptureGeminiClient:
+        def __init__(self) -> None:
+            self.payloads: list[dict] = []
+
+        def analyze(self, payload, **kwargs):  # noqa: ARG002
+            self.payloads.append(payload)
+            return None
+
+    capture = CaptureGeminiClient()
+    engine.reasoning_loop.gemini_client = capture
+
+    response = engine.start_simulation(
+        SimulationStartRequest(
+            mission_profile=baseline.mission_profile,
+            selected_crop=baseline.selected_system.crop.name,
+            selected_algae=baseline.selected_system.algae.name,
+            selected_microbial=baseline.selected_system.microbial.name,
+        )
+    )
+
+    assert capture.payloads == []
+    assert response.ui_enhanced.executive_summary
+    assert response.llm_analysis.reasoning_summary
+
+
+def test_mission_step_is_deterministic_and_does_not_call_gemini(monkeypatch) -> None:
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     engine = RecommendationEngine(provider=JSONDataProvider())
     baseline = engine.recommend(_build_mission())
@@ -211,13 +249,7 @@ def test_mission_step_generates_state_and_event_aware_llm_analysis(monkeypatch) 
         )
     )
 
-    assert len(capture.payloads) == 1
-    mission_step_payload = capture.payloads[-1]
-    assert mission_step_payload["request_context"]["source"] == "mission_step"
-    assert mission_step_payload["previous_state"] is not None
-    assert mission_step_payload["history_summary"]
-    assert mission_step_payload["events"]["contamination"] == 18.0
-    assert mission_step_payload["deltas"]["risk_delta"] == response.risk_delta
+    assert capture.payloads == []
     assert "mission step analysis" in response.llm_analysis.reasoning_summary.lower()
     assert response.ui_enhanced.adaptation_summary
     assert response.ui_enhanced.algae_note

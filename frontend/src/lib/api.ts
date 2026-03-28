@@ -5,8 +5,6 @@ import type {
   MissionStepResponse,
   MissionPayload,
   RecommendationResponse,
-  SimulationPayload,
-  SimulationResponse,
   SimulationStartPayload,
   SimulationStartResponse,
 } from "@/lib/types";
@@ -46,13 +44,6 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
 export function recommendMission(payload: MissionPayload): Promise<RecommendationResponse> {
   return request<RecommendationResponse>("/recommend", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
-}
-
-export function simulateMission(payload: SimulationPayload): Promise<SimulationResponse> {
-  return request<SimulationResponse>("/simulate", {
     method: "POST",
     body: JSON.stringify(payload),
   });

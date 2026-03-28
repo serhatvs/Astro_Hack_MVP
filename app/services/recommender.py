@@ -91,6 +91,7 @@ class RecommendationEngine:
         events: Mapping[str, Any] | MissionEvents | None = None,
         deltas: Mapping[str, Any] | None = None,
         allow_refinement: bool | None = None,
+        use_llm: bool = True,
     ) -> RecommendationResponse:
         allow_refinement = source == "recommend" if allow_refinement is None else allow_refinement
         mission_fit_bias = 0.03 if weight_adjustments else 0.0
@@ -131,7 +132,7 @@ class RecommendationEngine:
             events=events,
             deltas=deltas,
             allow_refinement=allow_refinement,
-            invoke_gemini=source == "recommend",
+            use_llm=use_llm,
         )
         return self._compose_recommendation_response(
             mission=mission,
@@ -197,7 +198,7 @@ class RecommendationEngine:
                 }
             },
             allow_refinement=False,
-            invoke_gemini=True,
+            use_llm=False,
         )
 
         recommendation = self._compose_recommendation_response(
@@ -226,6 +227,7 @@ class RecommendationEngine:
             request.mission_profile,
             source="simulate",
             allow_refinement=False,
+            use_llm=False,
         )
         updated_mission = request.mission_profile
         temporary_penalties: dict[str, float] | None = None
@@ -282,6 +284,7 @@ class RecommendationEngine:
                 "updated_constraints": updated_mission.constraints.model_dump(mode="json"),
             },
             allow_refinement=False,
+            use_llm=False,
         )
 
         previous_top_crop = baseline_recommendation.top_crops[0].name if baseline_recommendation.top_crops else None
@@ -337,6 +340,7 @@ class RecommendationEngine:
                 "new_mission_status": updated_recommendation.mission_status.value,
                 "adaptation_summary": adaptation_summary,
             },
+            use_llm=False,
         )
         updated_recommendation = updated_recommendation.model_copy(
             update={
@@ -406,6 +410,7 @@ class RecommendationEngine:
                 "time_step": request.time_step,
             },
             allow_refinement=False,
+            use_llm=False,
         )
 
         system_changes = self._build_system_changes(previous_state, response.mission_state)
@@ -432,6 +437,7 @@ class RecommendationEngine:
                 "new_time": response.mission_state.time,
                 "adaptation_summary": adaptation_summary,
             },
+            use_llm=False,
         )
 
         return MissionStepResponse(
@@ -1022,6 +1028,89 @@ class RecommendationEngine:
             changes.append(f"grow_system:{previous_grow_system}->{updated_grow_system}")
         return changes
 
+    def _build_event_pressure_summary(self, events: MissionEvents | None) -> str:
+        if events is None:
+            return "No major event was applied"
+
+        fragments: list[str] = []
+        if events.water_drop is not None:
+            fragments.append("Water drop tightened recovery margin")
+        if events.energy_drop is not None:
+            fragments.append("Energy drop increased power pressure")
+        if events.contamination is not None:
+            fragments.append("Contamination raised biological risk")
+        if events.yield_variation is not None:
+            if events.yield_variation < 0:
+                fragments.append("Yield drop reduced crop output")
+            elif events.yield_variation > 0:
+                fragments.append("Yield variation improved crop output")
+
+        if not fragments:
+            return "No major event was applied"
+        if len(fragments) == 1:
+            return fragments[0]
+        if len(fragments) == 2:
+            return f"{fragments[0]} and {fragments[1].lower()}"
+        return f"{fragments[0]}, {fragments[1].lower()}, and {fragments[2].lower()}"
+
+    def _build_primary_metric_effect_summary(
+        self,
+        previous_state: MissionState,
+        updated_state: MissionState,
+    ) -> str:
+        metric_deltas = {
+            "oxygen support": updated_state.system_metrics.oxygen_level - previous_state.system_metrics.oxygen_level,
+            "CO2 balance": updated_state.system_metrics.co2_balance - previous_state.system_metrics.co2_balance,
+            "food supply": updated_state.system_metrics.food_supply - previous_state.system_metrics.food_supply,
+            "nutrient cycling": (
+                updated_state.system_metrics.nutrient_cycle_efficiency
+                - previous_state.system_metrics.nutrient_cycle_efficiency
+            ),
+        }
+        label, delta = max(metric_deltas.items(), key=lambda item: abs(item[1]))
+
+        if abs(delta) < 0.25:
+            return "core loop metrics stayed near baseline"
+        if delta > 0:
+            return f"{label} improved"
+        return f"{label} weakened"
+
+    def _build_system_change_scope_summary(self, system_changes: list[str]) -> str:
+        if not system_changes:
+            return "The stack held configuration"
+
+        changed_layers: list[str] = []
+        if any(change.startswith("crop:") for change in system_changes):
+            changed_layers.append("crop")
+        if any(change.startswith("algae:") for change in system_changes):
+            changed_layers.append("algae")
+        if any(change.startswith("microbial:") for change in system_changes):
+            changed_layers.append("microbial")
+        if any(change.startswith("grow_system:") for change in system_changes):
+            changed_layers.append("plant system")
+
+        if not changed_layers:
+            return "The stack reconfigured"
+        if len(changed_layers) == 1:
+            return f"The {changed_layers[0]} layer reconfigured"
+        if len(changed_layers) == 2:
+            return f"The {changed_layers[0]} and {changed_layers[1]} layers reconfigured"
+        return f"The stack reconfigured across {', '.join(changed_layers[:-1])}, and {changed_layers[-1]}"
+
+    def _build_risk_shift_summary(
+        self,
+        previous_state: MissionState,
+        updated_state: MissionState,
+        risk_delta: float,
+    ) -> str:
+        previous_risk = previous_state.system_metrics.risk_level
+        updated_risk = updated_state.system_metrics.risk_level
+        if risk_delta > 0.05:
+            return f"risk rose from {previous_risk:.2f} to {updated_risk:.2f}"
+        if risk_delta < -0.05:
+            return f"risk fell from {previous_risk:.2f} to {updated_risk:.2f}"
+        return f"risk held near {updated_risk:.2f}"
+
     def _build_mission_step_summary(
         self,
         previous_state: MissionState,
@@ -1030,18 +1119,11 @@ class RecommendationEngine:
         system_changes: list[str],
         risk_delta: float,
     ) -> str:
-        event_list = ", ".join(
-            name for name, value in (events.model_dump().items() if events else []) if value is not None
-        ) or "no major events"
-        if system_changes:
-            return (
-                f"Mission step processed {event_list}; the integrated system changed configuration "
-                f"({'; '.join(system_changes)}) and risk moved by {risk_delta:+.3f}."
-            )
-        return (
-            f"Mission step processed {event_list}; the biological loop held its configuration while risk moved by "
-            f"{risk_delta:+.3f} from {previous_state.system_metrics.risk_level:.2f} to {updated_state.system_metrics.risk_level:.2f}."
-        )
+        event_summary = self._build_event_pressure_summary(events)
+        metric_effect = self._build_primary_metric_effect_summary(previous_state, updated_state)
+        change_scope = self._build_system_change_scope_summary(system_changes)
+        risk_summary = self._build_risk_shift_summary(previous_state, updated_state, risk_delta)
+        return f"{event_summary}. {change_scope}; {metric_effect} and {risk_summary}."
 
     def _compute_ranking_diff(
         self,

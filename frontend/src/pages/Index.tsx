@@ -8,6 +8,7 @@ import LiveTelemetry from "@/components/dashboard/LiveTelemetry";
 import SimulationLauncher from "@/components/dashboard/SimulationLauncher";
 import { recommendMission, startSimulation } from "@/lib/api";
 import { buildLayerSummaries, formatLabel, getExecutiveSummary, isGeminiUsed } from "@/lib/mission-view";
+import { saveSimulationSession } from "@/lib/simulation-session";
 import type {
   BackendGoal,
   ConstraintLevel,
@@ -99,6 +100,7 @@ const Index = () => {
         mission_profile: currentRecommendation.mission_profile,
         ...selection,
       });
+      saveSimulationSession(session, null);
       navigate("/simulation", { state: { session } });
     } catch (requestError) {
       const message = requestError instanceof Error ? requestError.message : "Unable to start the ecosystem simulation.";

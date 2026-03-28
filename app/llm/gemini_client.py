@@ -27,6 +27,7 @@ class GeminiClient:
         self,
         payload: dict[str, Any],
         *,
+        use_llm: bool = True,
         fallback_ui: dict[str, Any] | None = None,
         default_reasoning: str = "Gemini returned incomplete analysis; deterministic fallback remains active.",
     ) -> GeminiNarrative | None:
@@ -35,6 +36,10 @@ class GeminiClient:
         The app remains deterministic-first: if Gemini is unavailable, missing,
         or returns malformed output, callers should fall back to rule-based analysis.
         """
+
+        if not use_llm:
+            logger.info("Gemini blocked by use_llm=False; skipping external AI call.")
+            return None
 
         if not self.is_available():
             logger.info("Gemini disabled: GEMINI_API_KEY is not set.")

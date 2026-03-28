@@ -89,8 +89,11 @@ def test_simulate_returns_ranking_diff_and_risk_delta(monkeypatch) -> None:
     assert data["updated_recommendation"]["ui_enhanced"]["adaptation_summary"]
     assert data["updated_recommendation"]["ranked_candidates"]["algae"]
     assert data["adaptation_summary"]
+    assert "water" in data["adaptation_summary"].lower()
+    assert "risk" in data["adaptation_summary"].lower()
     assert data["reason"] == data["adaptation_summary"]
     assert data["adaptation_reason"] == data["adaptation_summary"]
+    assert not data["updated_recommendation"]["llm_analysis"]["reasoning_summary"].endswith(" -gemini")
 
 
 def test_simulate_yield_drop_with_affected_crop_returns_clear_diff(monkeypatch) -> None:
@@ -232,6 +235,7 @@ def test_simulation_start_bootstraps_selected_stack(monkeypatch) -> None:
     assert data["mission_status"] in {"NOMINAL", "WATCH", "CRITICAL"}
     assert data["operational_note"]
     assert data["ui_enhanced"]["executive_summary"]
+    assert not data["llm_analysis"]["reasoning_summary"].endswith(" -gemini")
 
 
 def test_simulation_start_rejects_invalid_selected_names(monkeypatch) -> None:
@@ -296,10 +300,13 @@ def test_mission_step_updates_stored_state(monkeypatch) -> None:
     assert data["mission_state"]["resources"]["water"] < mission_state["resources"]["water"]
     assert len(data["mission_state"]["history"]) >= 2
     assert data["adaptation_summary"]
+    assert "water drop" in data["adaptation_summary"].lower()
+    assert "risk" in data["adaptation_summary"].lower()
     assert data["ui_enhanced"]["adaptation_summary"]
     assert data["ranked_candidates"]["crop"]
     assert isinstance(data["system_changes"], list)
     assert isinstance(data["risk_delta"], float)
+    assert not data["llm_analysis"]["reasoning_summary"].endswith(" -gemini")
 
 
 def test_mission_step_works_after_simulation_start(monkeypatch) -> None:

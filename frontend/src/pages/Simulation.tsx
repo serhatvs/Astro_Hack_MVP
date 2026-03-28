@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ArrowDownRight, ArrowLeft, ArrowRight, ArrowUpRight, FlaskConical, Loader2, Orbit, Play, ShieldAlert, Waves, Zap } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { toast } from "sonner";
@@ -7,17 +7,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { stepMission } from "@/lib/api";
 import { buildLayerSummaries, formatLabel, getExecutiveSummary } from "@/lib/mission-view";
+import { loadSimulationSession, saveSimulationSession, type SimulationSession } from "@/lib/simulation-session";
 import type {
   MissionEventsPayload,
-  MissionStepResponse,
   MissionStatus,
-  SimulationStartResponse,
 } from "@/lib/types";
 
-type SimulationSession = MissionStepResponse | SimulationStartResponse;
-
 interface SimulationRouteState {
-  session?: SimulationStartResponse;
+  session?: SimulationSession;
 }
 
 const statusClass = (status: MissionStatus) => {
@@ -39,7 +36,7 @@ const parseOptionalNumber = (value: string): number | undefined => {
   return Number.isFinite(parsed) ? parsed : undefined;
 };
 
-const isSimulationStartResponse = (value: unknown): value is SimulationStartResponse => {
+const hasSimulationSessionShape = (value: unknown): value is SimulationSession => {
   if (!value || typeof value !== "object") {
     return false;
   }
@@ -47,21 +44,48 @@ const isSimulationStartResponse = (value: unknown): value is SimulationStartResp
   return Boolean(candidate.mission_state && candidate.selected_system && candidate.ranked_candidates);
 };
 
+const parseSystemChange = (value: string) => {
+  const [rawKind, rawTransition] = value.split(":", 2);
+  if (!rawKind || !rawTransition || !rawTransition.includes("->")) {
+    return null;
+  }
+
+  const [from, to] = rawTransition.split("->", 2);
+  return {
+    kind: rawKind,
+    from: from || "",
+    to: to || "",
+  };
+};
+
 const Simulation = () => {
   const location = useLocation();
-  const initialSession = useMemo(() => {
+  const initialBundle = useMemo(() => {
     const state = (location.state as SimulationRouteState | null)?.session;
-    return isSimulationStartResponse(state) ? state : null;
+    if (hasSimulationSessionShape(state)) {
+      return {
+        current: state,
+        previous: null,
+      };
+    }
+    return loadSimulationSession();
   }, [location.state]);
 
-  const [session, setSession] = useState<SimulationSession | null>(initialSession);
-  const [previousSession, setPreviousSession] = useState<SimulationSession | null>(null);
+  const [session, setSession] = useState<SimulationSession | null>(initialBundle?.current ?? null);
+  const [previousSession, setPreviousSession] = useState<SimulationSession | null>(initialBundle?.previous ?? null);
   const [timeStep, setTimeStep] = useState("1");
   const [waterDrop, setWaterDrop] = useState("");
   const [energyDrop, setEnergyDrop] = useState("");
   const [contamination, setContamination] = useState("");
   const [yieldDrop, setYieldDrop] = useState("");
   const [isApplyingStep, setIsApplyingStep] = useState(false);
+
+  useEffect(() => {
+    if (!session) {
+      return;
+    }
+    saveSimulationSession(session, previousSession);
+  }, [previousSession, session]);
 
   if (!session) {
     return (
@@ -90,10 +114,14 @@ const Simulation = () => {
   }
 
   const layerSummaries = buildLayerSummaries(session);
+  const previousLayerSummaries = previousSession ? buildLayerSummaries(previousSession) : [];
   const cropLayer = layerSummaries.find((layer) => layer.type === "crop");
   const missionState = session.mission_state;
   const latestEvents = "events" in session ? session.events ?? null : null;
   const systemChanges = "system_changes" in session ? session.system_changes : [];
+  const parsedSystemChanges = systemChanges
+    .map(parseSystemChange)
+    .filter((item): item is NonNullable<ReturnType<typeof parseSystemChange>> => Boolean(item));
   const riskDelta = "risk_delta" in session ? session.risk_delta : null;
   const executiveSummary = getExecutiveSummary(session);
   const reasoningSummary =
@@ -107,8 +135,45 @@ const Simulation = () => {
       .join(" / ") || "None suggested";
   const adaptationSummary =
     ("adaptation_summary" in session ? session.adaptation_summary : "") ||
-    session.ui_enhanced.adaptation_summary ||
+    session.ui_enhanced?.adaptation_summary ||
     "Simulation initialized with the selected biological stack. Apply mission events to see how the loop responds.";
+  const currentRisk = missionState.system_metrics.risk_level;
+  const previousRisk =
+    typeof riskDelta === "number"
+      ? Math.max(0, currentRisk - riskDelta)
+      : previousSession?.mission_state.system_metrics.risk_level ?? null;
+  const riskTrend =
+    riskDelta === null
+      ? "Baseline"
+      : riskDelta > 0.05
+        ? "Increased"
+        : riskDelta < -0.05
+          ? "Decreased"
+          : "Stable";
+  const previousPlantSystem =
+    previousLayerSummaries.find((layer) => layer.type === "crop")?.supportSystem ||
+    parsedSystemChanges.find((item) => item.kind === "grow_system")?.from ||
+    null;
+  const currentPlantSystem = cropLayer?.supportSystem || parsedSystemChanges.find((item) => item.kind === "grow_system")?.to || null;
+  const previousStackLabel =
+    previousLayerSummaries.length > 0
+      ? previousLayerSummaries.map((layer) => formatLabel(layer.name)).join(" + ")
+      : layerSummaries.length > 0 && parsedSystemChanges.some((item) => ["crop", "algae", "microbial"].includes(item.kind))
+        ? layerSummaries
+            .map((layer) => {
+              const change = parsedSystemChanges.find((item) => item.kind === layer.type);
+              return formatLabel(change?.from || layer.name);
+            })
+            .join(" + ")
+        : null;
+  const currentStackLabel =
+    layerSummaries.length > 0
+      ? layerSummaries.map((layer) => formatLabel(layer.name)).join(" + ")
+      : "Unavailable";
+  const humanSystemChanges = parsedSystemChanges.map((item) => {
+    const label = item.kind === "grow_system" ? "Plant system" : `${formatLabel(item.kind)} layer`;
+    return `${label}: ${formatLabel(item.from)} -> ${formatLabel(item.to)}`;
+  });
 
   const metricCards = [
     { label: "Oxygen Level", value: missionState.system_metrics.oxygen_level, accent: "bg-neon-cyan" },
@@ -171,6 +236,7 @@ const Simulation = () => {
       });
       setPreviousSession(currentSession);
       setSession(response);
+      saveSimulationSession(response, currentSession);
       setWaterDrop("");
       setEnergyDrop("");
       setContamination("");
@@ -209,6 +275,9 @@ const Simulation = () => {
                 <span>Duration: <span className="text-foreground">{formatLabel(missionState.duration)}</span></span>
                 <span>Goal: <span className="text-foreground">{formatLabel(missionState.goal)}</span></span>
                 <span>Time: <span className="text-foreground">{missionState.time} day(s)</span></span>
+                <span>
+                  Mode: <span className="text-neon-green">Deterministic Simulation</span>
+                </span>
                 <span>
                   Plant system:{" "}
                   <span className="text-neon-cyan">
@@ -389,30 +458,48 @@ const Simulation = () => {
               <p className="text-xs leading-relaxed text-foreground/80">{adaptationSummary}</p>
             </div>
 
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <div className="rounded-lg border border-glass-border bg-muted/10 p-3">
-                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Risk Delta</p>
-                <p className={`mt-2 text-lg font-mono ${riskDelta !== null && riskDelta > 0 ? "text-neon-red" : riskDelta !== null && riskDelta < 0 ? "text-neon-green" : "text-foreground"}`}>
-                  {riskDelta !== null ? `${riskDelta >= 0 ? "+" : ""}${riskDelta.toFixed(3)}` : "N/A"}
+                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Risk Shift</p>
+                <p className="mt-2 text-sm font-mono text-foreground">
+                  {previousRisk !== null ? `${previousRisk.toFixed(2)}% -> ${currentRisk.toFixed(2)}%` : `${currentRisk.toFixed(2)}%`}
+                </p>
+                <p className={`mt-1 text-xs font-mono ${riskTrend === "Increased" ? "text-neon-red" : riskTrend === "Decreased" ? "text-neon-green" : "text-muted-foreground"}`}>
+                  {riskTrend}
+                </p>
+              </div>
+              <div className="rounded-lg border border-glass-border bg-muted/10 p-3">
+                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Plant System</p>
+                <p className="mt-2 text-sm font-mono text-foreground">
+                  {previousPlantSystem ? `${formatLabel(previousPlantSystem)} -> ${formatLabel(currentPlantSystem || "unknown")}` : formatLabel(currentPlantSystem || "unknown")}
+                </p>
+                <p className="mt-1 text-xs font-mono text-muted-foreground">
+                  {previousPlantSystem && previousPlantSystem !== currentPlantSystem ? "System shifted" : "System held"}
+                </p>
+              </div>
+              <div className="rounded-lg border border-glass-border bg-muted/10 p-3">
+                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Stack Transition</p>
+                <p className="mt-2 text-xs leading-relaxed text-foreground">
+                  {previousStackLabel ? `${previousStackLabel} -> ${currentStackLabel}` : currentStackLabel}
+                </p>
+                <p className="mt-1 text-xs font-mono text-muted-foreground">
+                  {previousStackLabel && previousStackLabel !== currentStackLabel ? "Layer change detected" : "Current stack active"}
                 </p>
               </div>
               <div className="rounded-lg border border-glass-border bg-muted/10 p-3">
                 <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Current Time</p>
                 <p className="mt-2 text-lg font-mono text-foreground">{missionState.time} day(s)</p>
-              </div>
-              <div className="rounded-lg border border-glass-border bg-muted/10 p-3">
-                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Last Event Count</p>
-                <p className="mt-2 text-lg font-mono text-foreground">
-                  {latestEvents ? Object.values(latestEvents).filter((value) => value !== null && value !== undefined).length : 0}
+                <p className="mt-1 text-xs font-mono text-muted-foreground">
+                  {latestEvents ? Object.values(latestEvents).filter((value) => value !== null && value !== undefined).length : 0} active event(s)
                 </p>
               </div>
             </div>
 
             <div className="min-h-0 flex-1 overflow-auto rounded-lg border border-glass-border bg-muted/10 p-3">
               <p className="mb-2 text-[10px] font-mono uppercase tracking-wider text-muted-foreground">System Changes</p>
-              {systemChanges.length > 0 ? (
+              {humanSystemChanges.length > 0 ? (
                 <div className="space-y-2 text-xs text-foreground/80">
-                  {systemChanges.map((change) => (
+                  {humanSystemChanges.map((change) => (
                     <p key={change}>{change}</p>
                   ))}
                 </div>
@@ -486,7 +573,7 @@ const Simulation = () => {
             <div className="flex items-center gap-2">
               <ShieldAlert className="h-4 w-4 text-neon-orange" />
               <h2 className="text-[10px] font-mono uppercase tracking-[0.24em] text-muted-foreground">
-                Critic & Event Trace
+                Deterministic Analysis & Event Trace
               </h2>
             </div>
 
@@ -515,13 +602,13 @@ const Simulation = () => {
               </div>
 
               <div className="rounded-lg border border-glass-border bg-muted/10 p-3">
-                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Improvement Cues</p>
+                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Stability Cues</p>
                 <div className="mt-2 space-y-1 text-xs text-foreground/80">
                   {improvementCues.slice(0, 3).map((item) => (
                     <p key={item}>{item}</p>
                   ))}
                   {improvementCues.length === 0 && (
-                    <p className="text-muted-foreground">No additional refinement cue was raised for the current state.</p>
+                    <p className="text-muted-foreground">No additional deterministic stability cue was raised for the current state.</p>
                   )}
                 </div>
               </div>
@@ -533,7 +620,7 @@ const Simulation = () => {
                 <p className="mt-1 break-all text-foreground">{missionState.mission_id}</p>
               </div>
               <div className="rounded-lg border border-glass-border bg-muted/10 p-3">
-                <p>Alternative Concept</p>
+                <p>Reference Concept</p>
                 <p className="mt-1 text-foreground">
                   {alternativeText}
                 </p>

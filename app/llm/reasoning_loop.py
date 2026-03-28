@@ -52,7 +52,7 @@ class ReasoningLoop:
         events: MissionEvents | Mapping[str, Any] | None = None,
         deltas: Mapping[str, Any] | None = None,
         allow_refinement: bool = True,
-        invoke_gemini: bool = True,
+        use_llm: bool = True,
     ) -> tuple[IntegratedResult, list[Any], GrowingSystem, GeminiNarrative]:
         narrative = self._analyze_result(
             source=source,
@@ -65,7 +65,7 @@ class ReasoningLoop:
             events=events,
             deltas=deltas,
             allow_refinement=allow_refinement,
-            invoke_gemini=invoke_gemini,
+            use_llm=use_llm,
         )
 
         if not allow_refinement or self.max_iterations < 2:
@@ -138,7 +138,7 @@ class ReasoningLoop:
         previous_state: MissionState | Mapping[str, Any] | None = None,
         events: MissionEvents | Mapping[str, Any] | None = None,
         deltas: Mapping[str, Any] | None = None,
-        invoke_gemini: bool = True,
+        use_llm: bool = True,
     ) -> GeminiNarrative:
         narrative = self._analyze_payload(
             source=source,
@@ -150,7 +150,7 @@ class ReasoningLoop:
             previous_state=previous_state or (previous_recommendation.mission_state if previous_recommendation else None),
             events=events,
             deltas=deltas,
-            invoke_gemini=invoke_gemini,
+            use_llm=use_llm,
         )
         return self._ensure_second_pass(
             narrative,
@@ -178,7 +178,7 @@ class ReasoningLoop:
         events: MissionEvents | Mapping[str, Any] | None,
         deltas: Mapping[str, Any] | None,
         allow_refinement: bool,
-        invoke_gemini: bool,
+        use_llm: bool,
     ) -> GeminiNarrative:
         return self._analyze_payload(
             source=source,
@@ -193,7 +193,7 @@ class ReasoningLoop:
                 **(dict(deltas or {})),
                 "allow_refinement": allow_refinement,
             },
-            invoke_gemini=invoke_gemini,
+            use_llm=use_llm,
         )
 
     def _analyze_payload(
@@ -208,7 +208,7 @@ class ReasoningLoop:
         previous_state: MissionState | Mapping[str, Any] | None,
         events: MissionEvents | Mapping[str, Any] | None,
         deltas: Mapping[str, Any] | None,
-        invoke_gemini: bool,
+        use_llm: bool,
     ) -> GeminiNarrative:
         payload = self._build_llm_payload(
             source=source,
@@ -233,12 +233,19 @@ class ReasoningLoop:
             deltas=deltas,
         )
 
-        if not invoke_gemini:
-            logger.info("Gemini skipped for source=%s; using deterministic ui/debug narrative.", source)
+        llm_allowed = bool(use_llm and source == "recommend")
+        if use_llm and not llm_allowed:
+            logger.info(
+                "Gemini blocked for source=%s; simulation/update flows are deterministic-only.",
+                source,
+            )
+        if not llm_allowed:
+            logger.info("Gemini blocked for source=%s; using deterministic ui/debug narrative.", source)
             return fallback
 
         gemini_narrative = self.gemini_client.analyze(
             payload,
+            use_llm=llm_allowed,
             fallback_ui=fallback.ui_layer.model_dump(mode="json"),
             default_reasoning=fallback.debug_layer.reasoning_summary,
         )
@@ -484,30 +491,25 @@ class ReasoningLoop:
             return ""
         if source == "simulate":
             change_event = events.get("change_event", "condition change")
-            previous_top = deltas.get("previous_top_crop")
-            new_top = deltas.get("new_top_crop")
-            previous_system = deltas.get("previous_system")
-            new_system = deltas.get("new_system")
             risk_score_delta = deltas.get("risk_score_delta")
-            parts = [f"After {change_event}, the deterministic stack was re-evaluated for the {mission.environment.value} mission."]
-            if previous_top and new_top:
-                if previous_top == new_top:
-                    parts.append(f"{str(new_top).title()} stayed in the lead crop position.")
-                else:
-                    parts.append(f"Lead crop changed from {str(previous_top).title()} to {str(new_top).title()}.")
-            if previous_system and new_system and previous_system != new_system:
-                parts.append(f"The plant system shifted from {previous_system} to {new_system}.")
+            parts = [f"{str(change_event).replace('_', ' ').title()} forced a deterministic re-check for the {mission.environment.value} mission."]
+            if deltas.get("system_changed"):
+                parts.append("The plant system changed to protect resilience.")
+            elif deltas.get("previous_top_crop") != deltas.get("new_top_crop"):
+                parts.append("Lead crop priority changed under the updated mission pressure.")
             if isinstance(risk_score_delta, (int, float)):
-                direction = "increased" if risk_score_delta > 0 else "decreased" if risk_score_delta < 0 else "held steady"
+                direction = "rose" if risk_score_delta > 0 else "fell" if risk_score_delta < 0 else "held steady"
                 parts.append(f"Overall mission-agriculture risk {direction}.")
             return " ".join(parts[:3]).strip()
         if source == "mission_step":
             active_events = [name for name, value in events.items() if value is not None]
-            parts = [f"Mission state advanced with {', '.join(active_events) if active_events else 'no major events'}."]
+            event_summary = ", ".join(active_events) if active_events else "no major events"
+            parts = [f"Mission step processed {event_summary}."]
             if deltas.get("system_changes"):
-                parts.append("The biological loop adjusted its configuration to protect resilience.")
+                parts.append("The biological loop reconfigured to protect stability.")
             elif isinstance(deltas.get("risk_delta"), (int, float)):
-                parts.append("The biological loop held configuration while operational risk was updated.")
+                direction = "rose" if float(deltas["risk_delta"]) > 0 else "fell" if float(deltas["risk_delta"]) < 0 else "held steady"
+                parts.append(f"The biological loop held configuration while risk {direction}.")
             return " ".join(parts[:2]).strip()
         return ""
 

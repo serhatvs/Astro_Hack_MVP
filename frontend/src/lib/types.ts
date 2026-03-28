@@ -8,9 +8,7 @@ export type BackendGoal =
   | "low_maintenance";
 export type UiGoal = "balanced" | "calorie" | "water" | "low_maintenance";
 export type CrisisType = "water" | "energy" | "yield";
-export type ChangeEvent = "water_drop" | "energy_drop" | "yield_drop";
 export type RiskLevel = "low" | "moderate" | "high";
-export type RiskDelta = "increased" | "decreased" | "unchanged";
 export type MissionStatus = "NOMINAL" | "WATCH" | "CRITICAL";
 export type ApiStatus = "idle" | "loading" | "ready" | "warning" | "error";
 
@@ -236,13 +234,6 @@ export interface RecommendationResponse {
   explanation: string;
 }
 
-export interface SimulationPayload {
-  mission_profile: MissionPayload;
-  change_event: ChangeEvent;
-  affected_crop?: string;
-  previous_recommendation?: RecommendationResponse;
-}
-
 export interface SimulationStartPayload {
   mission_profile: MissionPayload;
   selected_crop: string;
@@ -261,26 +252,6 @@ export interface SimulationStartResponse {
   llm_analysis: LLMAnalysis;
   mission_status: MissionStatus;
   operational_note: string;
-}
-
-export interface SimulationResponse {
-  change_event: ChangeEvent;
-  changed_fields: string[];
-  previous_top_crop: string | null;
-  new_top_crop: string | null;
-  ranking_diff: Record<string, number>;
-  system_changed: boolean;
-  previous_system: string | null;
-  new_system: string | null;
-  risk_delta: RiskDelta;
-  risk_score_delta: number;
-  previous_mission_status: MissionStatus;
-  new_mission_status: MissionStatus;
-  updated_mission_profile: MissionPayload;
-  updated_recommendation: RecommendationResponse;
-  adaptation_summary: string;
-  reason: string;
-  adaptation_reason: string;
 }
 
 export interface MissionEventsPayload {
