@@ -252,11 +252,11 @@ def test_initial_risk_is_fairly_calibrated_by_constraints_and_duration(monkeypat
                     "energy": "high",
                     "area": "high",
                 },
-                "goal": "balanced",
-            },
-            "selected_crop": "Lactuca sativa (Marul)",
-            "selected_algae": "Chlorella vulgaris",
-            "selected_microbial": "Saccharomyces boulardii",
+                    "goal": "balanced",
+                },
+            "selected_crop": "Solanum lycopersicum (Dwarf Domates)",
+            "selected_algae": "Dunaliella salina",
+            "selected_microbial": "Methylobacterium extorquens",
         },
     )
     assert high_response.status_code == 200
@@ -302,6 +302,51 @@ def test_simulation_duration_maps_to_weekly_horizon(monkeypatch) -> None:
         assert response.status_code == 200
         data = response.json()
         assert data["mission_state"]["max_weeks"] == expected_weeks
+
+
+def test_strong_low_constraint_system_survives_past_week_20_on_medium_and_long_horizons(monkeypatch) -> None:
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+    for duration in ("medium", "long"):
+        bootstrap = client.post(
+            "/simulation/start",
+            json={
+                "mission_profile": {
+                    "environment": "moon",
+                    "duration": duration,
+                    "constraints": {
+                        "water": "low",
+                        "energy": "low",
+                        "area": "low",
+                    },
+                    "goal": "balanced",
+                },
+                "selected_crop": "Lactuca sativa (Marul)",
+                "selected_algae": "Chlorella vulgaris",
+                "selected_microbial": "Saccharomyces boulardii",
+            },
+        )
+
+        assert bootstrap.status_code == 200
+        mission_id = bootstrap.json()["mission_state"]["mission_id"]
+
+        latest = None
+        for _ in range(20):
+            response = client.post(
+                "/mission/step",
+                json={
+                    "mission_id": mission_id,
+                    "time_step": 1,
+                },
+            )
+            assert response.status_code == 200
+            latest = response.json()
+
+        assert latest is not None
+        assert latest["mission_state"]["time"] == 20
+        assert latest["mission_state"]["end_reason"] is None
+        assert latest["mission_state"]["resources"]["energy"] > 0
+        assert latest["mission_state"]["system_metrics"]["risk_level"] < 85
 
 
 def test_simulation_start_bootstraps_selected_stack(monkeypatch) -> None:

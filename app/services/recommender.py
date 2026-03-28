@@ -788,8 +788,8 @@ class RecommendationEngine:
         ) / 3
         duration_pressure = {
             Duration.SHORT: 0.02,
-            Duration.MEDIUM: 0.06,
-            Duration.LONG: 0.10,
+            Duration.MEDIUM: 0.065,
+            Duration.LONG: 0.085,
         }[mission.duration]
         environment_pressure = {
             Environment.ISS: 0.03,
@@ -812,18 +812,18 @@ class RecommendationEngine:
             + integrated_result.algae.risk_score
             + integrated_result.microbial.risk_score
         ) / 3
-        mismatch_pressure = 0.15 * (1 - lead_crop_compatibility)
-        domain_pressure = 0.10 * average_domain_risk
+        mismatch_pressure = 0.13 * (1 - lead_crop_compatibility)
+        domain_pressure = 0.09 * average_domain_risk
         interaction_pressure = (
-            0.08 * integrated_result.interaction.conflict_score
-            + 0.06 * integrated_result.interaction.complexity_penalty
-            + 0.04 * integrated_result.interaction.resource_overlap
+            0.07 * integrated_result.interaction.conflict_score
+            + 0.05 * integrated_result.interaction.complexity_penalty
+            + 0.035 * integrated_result.interaction.resource_overlap
         )
         stabilizer_bonus = (
-            0.08 * algae_support
-            + 0.08 * microbial_support
-            + 0.05 * integrated_result.interaction.synergy_score
-            + 0.03 * lead_crop_compatibility
+            0.10 * algae_support
+            + 0.10 * microbial_support
+            + 0.06 * integrated_result.interaction.synergy_score
+            + 0.04 * lead_crop_compatibility
         )
 
         score = round(
@@ -888,6 +888,34 @@ class RecommendationEngine:
             ConstraintLevel.MEDIUM: 0.10,
             ConstraintLevel.HIGH: 0.20,
         }[level]
+
+    def _duration_weekly_pressure_scale(self, duration: Duration) -> float:
+        return {
+            Duration.SHORT: 1.0,
+            Duration.MEDIUM: 0.74,
+            Duration.LONG: 0.52,
+        }[duration]
+
+    def _duration_weekly_relief_scale(self, duration: Duration) -> float:
+        return {
+            Duration.SHORT: 1.0,
+            Duration.MEDIUM: 1.08,
+            Duration.LONG: 1.18,
+        }[duration]
+
+    def _duration_event_pressure_scale(self, duration: Duration) -> float:
+        return {
+            Duration.SHORT: 1.0,
+            Duration.MEDIUM: 0.94,
+            Duration.LONG: 0.88,
+        }[duration]
+
+    def _duration_weekly_delta_bounds(self, duration: Duration) -> tuple[float, float]:
+        return {
+            Duration.SHORT: (-0.02, 0.08),
+            Duration.MEDIUM: (-0.025, 0.06),
+            Duration.LONG: (-0.03, 0.045),
+        }[duration]
 
     def _build_selected_system(self, integrated_result) -> SelectedSystemBundle:
         return SelectedSystemBundle(
@@ -1199,31 +1227,36 @@ class RecommendationEngine:
         risk_bias = 1.0
         complexity_bias = 1.0
         loop_bias = 1.0
+        pressure_scale = self._duration_weekly_pressure_scale(state.duration)
+        relief_scale = self._duration_weekly_relief_scale(state.duration)
 
         if crop is not None:
-            risk_bias += weeks * ((crop.risk + crop.maintenance) / 5000)
-            complexity_bias += weeks * (crop.maintenance / 7000)
+            risk_bias += pressure_scale * weeks * ((crop.risk + crop.maintenance) / 7200)
+            complexity_bias += pressure_scale * weeks * (crop.maintenance / 9200)
         if algae is not None:
-            risk_bias -= weeks * (algae.oxygen_contribution / 5000)
-            complexity_bias += weeks * (algae.energy_light_dependency / 5000)
-            loop_bias += weeks * (algae.co2_utilization / 7000)
+            risk_bias -= relief_scale * weeks * (algae.oxygen_contribution / 7200)
+            complexity_bias += pressure_scale * weeks * (algae.energy_light_dependency / 7600)
+            loop_bias += relief_scale * weeks * (algae.co2_utilization / 9000)
         if microbial is not None:
-            risk_bias -= weeks * (microbial.nutrient_conversion_capability / 6500)
-            complexity_bias += weeks * (microbial.maintenance_burden / 7000)
-            loop_bias += weeks * (microbial.loop_closure_contribution / 4500)
+            risk_bias -= relief_scale * weeks * (microbial.nutrient_conversion_capability / 7800)
+            complexity_bias += pressure_scale * weeks * (microbial.maintenance_burden / 9200)
+            loop_bias += relief_scale * weeks * (microbial.loop_closure_contribution / 5600)
 
         if resources.water < 50:
-            risk_bias += (50 - resources.water) / 220
+            risk_bias += pressure_scale * (50 - resources.water) / 360
         if resources.energy < 50:
-            risk_bias += (50 - resources.energy) / 280
-            complexity_bias += (50 - resources.energy) / 260
+            risk_bias += pressure_scale * (50 - resources.energy) / 420
+            complexity_bias += pressure_scale * (50 - resources.energy) / 380
         if resources.area < 45:
-            complexity_bias += (45 - resources.area) / 320
+            complexity_bias += pressure_scale * (45 - resources.area) / 460
 
         if crop is not None and (resources.water < 45 or resources.energy < 45):
             shortage = max(45 - resources.water, 45 - resources.energy, 0) / 100
             temporary_penalties = {
-                crop.name.lower(): min(0.35, 0.08 + shortage + (crop.growth_time / 500))
+                crop.name.lower(): min(
+                    0.30,
+                    0.06 + (pressure_scale * shortage) + (crop.growth_time / 700),
+                )
             }
             status_penalty = True
 
@@ -1232,7 +1265,7 @@ class RecommendationEngine:
             and events.contamination is not None
             and microbial is not None
         ):
-            risk_bias += (events.contamination * microbial.contamination_risk) / 12000
+            risk_bias += pressure_scale * (events.contamination * microbial.contamination_risk) / 18000
 
         return {
             "temporary_penalties": temporary_penalties,
@@ -1322,6 +1355,10 @@ class RecommendationEngine:
     ) -> float:
         crop, algae, microbial = self._resolve_active_candidates(updated_state)
         instantaneous_risk = updated_state.system_metrics.risk_level / 100
+        pressure_scale = self._duration_weekly_pressure_scale(updated_state.duration)
+        relief_scale = self._duration_weekly_relief_scale(updated_state.duration)
+        event_scale = self._duration_event_pressure_scale(updated_state.duration)
+        min_delta, max_delta = self._duration_weekly_delta_bounds(updated_state.duration)
 
         water_pressure = max(0.0, 50 - updated_state.resources.water) / 600
         energy_pressure = max(0.0, 50 - updated_state.resources.energy) / 650
@@ -1344,13 +1381,13 @@ class RecommendationEngine:
         event_pressure = 0.0
         if events is not None:
             if events.contamination is not None:
-                event_pressure += events.contamination / 550
+                event_pressure += events.contamination / 450
             if events.water_drop is not None:
-                event_pressure += events.water_drop / 1200
+                event_pressure += events.water_drop / 950
             if events.energy_drop is not None:
-                event_pressure += events.energy_drop / 1300
+                event_pressure += events.energy_drop / 1100
             if events.yield_variation is not None and events.yield_variation < 0:
-                event_pressure += abs(events.yield_variation) / 1200
+                event_pressure += abs(events.yield_variation) / 1100
 
         atmospheric_relief = (
             ((algae.oxygen_contribution / 9000) + (algae.co2_utilization / 11000))
@@ -1374,19 +1411,25 @@ class RecommendationEngine:
         ) * 0.05
 
         delta_risk = (
-            water_pressure
-            + energy_pressure
-            + area_pressure
-            + crop_pressure
-            + crop_mismatch
-            + microbial_gap
-            + event_pressure
-            + instantaneous_pressure
-            - atmospheric_relief
-            - microbial_relief
-            - stability_relief
+            (
+                water_pressure
+                + energy_pressure
+                + area_pressure
+                + crop_pressure
+                + crop_mismatch
+                + microbial_gap
+                + instantaneous_pressure
+            )
+            * pressure_scale
+            + (event_pressure * event_scale)
+            - (
+                atmospheric_relief
+                + microbial_relief
+                + stability_relief
+            )
+            * relief_scale
         )
-        return round(max(-0.02, min(0.08, delta_risk)), 4)
+        return round(max(min_delta, min(max_delta, delta_risk)), 4)
 
     def _derive_event_adjustments(
         self,
@@ -1561,10 +1604,14 @@ class RecommendationEngine:
     ) -> str:
         previous_risk = previous_state.system_metrics.risk_level
         updated_risk = updated_state.system_metrics.risk_level
-        if risk_delta > 0.05:
+        if risk_delta > 1.5:
             return f"system stress accumulated and risk rose from {previous_risk:.2f} to {updated_risk:.2f}"
-        if risk_delta < -0.05:
+        if risk_delta > 0.2:
+            return f"risk edged up from {previous_risk:.2f} to {updated_risk:.2f} under sustained weekly pressure"
+        if risk_delta < -1.5:
             return f"risk pressure eased from {previous_risk:.2f} to {updated_risk:.2f}"
+        if risk_delta < -0.2:
+            return f"risk recovered slightly from {previous_risk:.2f} to {updated_risk:.2f}"
         return f"risk held near {updated_risk:.2f} after weekly carry-over"
 
     def _build_mission_step_summary(
