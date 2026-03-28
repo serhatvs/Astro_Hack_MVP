@@ -1,19 +1,20 @@
 # Adaptive Closed-Loop Space Agriculture AI
 
-Hackathon-ready FastAPI MVP for mission-aware crop planning in closed-loop space agriculture and life-support scenarios. The service recommends crops, growing systems, resource posture, and mission risk, then shows how recommendations adapt when mission conditions change.
+Hackathon MVP that combines a FastAPI mission-planning engine with a React mission-control dashboard. The backend handles crop ranking, system selection, resource planning, risk analysis, and simulated adaptation. The frontend turns those results into a live demo UI.
 
-## Project Structure
+## Project Layout
 
 ```text
 C:\Users\VICTUS\ASTRO
-├── app
-├── data
-├── tests
-├── requirements.txt
-└── README.md
+|- app
+|- data
+|- tests
+|- frontend
+|- requirements.txt
+`- README.md
 ```
 
-## Install
+## Backend Setup
 
 ```powershell
 cd C:\Users\VICTUS\ASTRO
@@ -23,79 +24,85 @@ python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
-## Run
+## Run The Demo
+
+Start the backend:
 
 ```powershell
 cd C:\Users\VICTUS\ASTRO
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8010
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+Start the frontend in a second terminal:
+
+```powershell
+cd C:\Users\VICTUS\ASTRO\frontend
+npm install
+npm run dev
 ```
 
 Open:
 
-- `http://127.0.0.1:8010/docs`
-- `http://127.0.0.1:8010/redoc`
+- `http://localhost:5173`
+- `http://localhost:8000/docs`
 
-## Endpoints
+Optional frontend API override:
+
+```powershell
+$env:VITE_API_BASE_URL="http://localhost:8000"
+npm run dev
+```
+
+## API Endpoints
 
 - `GET /health`
 - `GET /demo-cases`
 - `POST /recommend`
 - `POST /simulate`
 
+## Sample Requests
+
+Recommend:
+
+```powershell
+curl.exe -X POST http://localhost:8000/recommend `
+  -H "Content-Type: application/json" `
+  -d "{\"environment\":\"mars\",\"duration\":\"long\",\"constraints\":{\"water\":\"low\",\"energy\":\"medium\",\"area\":\"medium\"},\"goal\":\"balanced\"}"
+```
+
+Simulate:
+
+```powershell
+curl.exe -X POST http://localhost:8000/simulate `
+  -H "Content-Type: application/json" `
+  -d "{\"mission_profile\":{\"environment\":\"mars\",\"duration\":\"long\",\"constraints\":{\"water\":\"low\",\"energy\":\"medium\",\"area\":\"medium\"},\"goal\":\"balanced\"},\"change_event\":\"water_drop\"}"
+```
+
 ## Demo Flow
 
-1. Load a preset mission from `GET /demo-cases`
-2. Send the mission to `POST /recommend`
-3. Trigger a mission change with `POST /simulate`
-4. Show how top crops, system choice, and risk change
+1. Start the backend on port `8000`.
+2. Start the frontend on port `5173`.
+3. In the dashboard, select the mission profile and click `Generate Plan`.
+4. Trigger `Water`, `Energy`, or `Yield` crisis simulation to show the adaptive re-ranking.
 
-## Sample Curl Requests
+## Tests
 
-### Load Demo Cases
-
-```powershell
-curl.exe http://127.0.0.1:8010/demo-cases
-```
-
-### Recommend
-
-```powershell
-curl.exe -X POST http://127.0.0.1:8010/recommend `
-  -H "Content-Type: application/json" `
-  -d "{\"environment\":\"mars\",\"duration\":\"long\",\"constraints\":{\"water\":\"low\",\"energy\":\"medium\",\"area\":\"medium\"},\"goal\":\"water_efficiency\"}"
-```
-
-### Simulate Adaptation
-
-```powershell
-curl.exe -X POST http://127.0.0.1:8010/simulate `
-  -H "Content-Type: application/json" `
-  -d "{\"mission_profile\":{\"environment\":\"mars\",\"duration\":\"long\",\"constraints\":{\"water\":\"medium\",\"energy\":\"medium\",\"area\":\"medium\"},\"goal\":\"balanced\"},\"change_event\":\"water_drop\"}"
-```
-
-## What The MVP Shows
-
-- mission-aware crop ranking with top 3 recommendations
-- system selection with deterministic reasoning
-- UI-friendly strengths, tradeoffs, and metric breakdowns
-- resource posture summary for water, energy, area, maintenance, and calorie output
-- lightweight adaptation logic for `water_drop`, `energy_drop`, and `yield_drop`
-
-## Demo Presets
-
-- `Mars Water Crisis`
-- `ISS Low Maintenance Mission`
-- `Moon Long Duration Calorie Mission`
-
-## Testing
+Backend tests:
 
 ```powershell
 cd C:\Users\VICTUS\ASTRO
 pytest
 ```
 
+Frontend build check:
+
+```powershell
+cd C:\Users\VICTUS\ASTRO\frontend
+npm run build
+```
+
 ## Notes
 
-- No external AI APIs are used
-- Data is JSON-backed for hackathon speed
-- The closed-loop/life-support framing is lightweight and deterministic, not a full simulator
+- No external AI APIs are used.
+- Data is JSON-backed for hackathon speed.
+- The frontend consumes the real backend responses; no mock runtime data is used in the integrated demo flow.
