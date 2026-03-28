@@ -34,6 +34,8 @@ from app.models.response import (
     InteractionScoreBundle,
     MissionStepResponse,
     RecommendationResponse,
+    RankedCandidatesBundle,
+    RankedDomainCandidate,
     RiskDelta,
     ScoreBundle,
     SelectedDomainSystem,
@@ -91,7 +93,7 @@ class RecommendationEngine:
         allow_refinement = source == "recommend" if allow_refinement is None else allow_refinement
         mission_fit_bias = 0.03 if weight_adjustments else 0.0
 
-        integrated_result, _domain_crops, selected_grow_system = self.integration_engine.select_configuration(
+        integrated_result, ranked_candidates, selected_grow_system = self.integration_engine.select_configuration(
             mission=mission,
             temporary_penalties=dict(temporary_penalties or {}),
             mission_fit_bias=mission_fit_bias,
@@ -109,10 +111,10 @@ class RecommendationEngine:
             integrated_result=integrated_result,
             existing_state=existing_state,
         )
-        integrated_result, _domain_crops, selected_grow_system, narrative = self.reasoning_loop.run(
+        integrated_result, ranked_candidates, selected_grow_system, narrative = self.reasoning_loop.run(
             mission=mission,
             result=integrated_result,
-            top_crop_rankings=[],
+            top_crop_rankings=ranked_candidates,
             grow_system=selected_grow_system,
             temporary_penalties=dict(temporary_penalties or {}),
             base_biases={
@@ -216,6 +218,7 @@ class RecommendationEngine:
             mission_profile=mission,
             mission_state=mission_state,
             selected_system=self._build_selected_system(integrated_result),
+            ranked_candidates=self._build_ranked_candidates(ranked_candidates),
             scores=self._build_scores(integrated_result),
             explanations=ExplanationBundle(
                 executive_summary=executive_summary,
@@ -455,6 +458,7 @@ class RecommendationEngine:
         return MissionStepResponse(
             mission_state=response.mission_state,
             selected_system=response.selected_system,
+            ranked_candidates=response.ranked_candidates,
             scores=response.scores,
             explanations=response.explanations,
             ui_enhanced=step_narrative.ui_layer,
@@ -588,6 +592,36 @@ class RecommendationEngine:
                 notes=integrated_result.microbial.notes,
             ),
         )
+
+    def _build_ranked_candidates(self, ranked_candidates) -> RankedCandidatesBundle:
+        return RankedCandidatesBundle(
+            crop=self._serialize_ranked_domain(ranked_candidates.crop, "crop"),
+            algae=self._serialize_ranked_domain(ranked_candidates.algae, "algae"),
+            microbial=self._serialize_ranked_domain(ranked_candidates.microbial, "microbial"),
+        )
+
+    def _serialize_ranked_domain(self, evaluations: list[Any], domain_type: str) -> list[RankedDomainCandidate]:
+        ranked_items: list[RankedDomainCandidate] = []
+        for index, evaluation in enumerate(evaluations, start=1):
+            notes = [str(note).strip() for note in getattr(evaluation, "notes", []) if str(note).strip()]
+            summary = ". ".join(note.rstrip(".") for note in notes[:2]).strip()
+            if summary:
+                summary += "."
+            ranked_items.append(
+                RankedDomainCandidate(
+                    name=evaluation.candidate.name,
+                    type=domain_type,
+                    rank=index,
+                    domain_score=round(evaluation.domain_score, 3),
+                    mission_fit_score=round(evaluation.mission_fit_score, 3),
+                    risk_score=round(evaluation.risk_score, 3),
+                    combined_score=round(evaluation.combined_score, 3),
+                    support_system=evaluation.support_system,
+                    summary=summary,
+                    notes=notes,
+                )
+            )
+        return ranked_items
 
     def _build_scores(self, integrated_result) -> ScoreBundle:
         return ScoreBundle(

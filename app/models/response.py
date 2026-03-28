@@ -103,6 +103,33 @@ class SelectedSystemBundle(BaseModel):
     microbial: SelectedDomainSystem
 
 
+class RankedDomainCandidate(BaseModel):
+    """Compact ranked candidate payload for expandable domain lists."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    type: str
+    rank: int
+    domain_score: float
+    mission_fit_score: float
+    risk_score: float
+    combined_score: float
+    support_system: str | None = None
+    summary: str = ""
+    notes: list[str] = Field(default_factory=list)
+
+
+class RankedCandidatesBundle(BaseModel):
+    """Grouped ranked candidates for each biological domain."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    crop: list[RankedDomainCandidate] = Field(default_factory=list)
+    algae: list[RankedDomainCandidate] = Field(default_factory=list)
+    microbial: list[RankedDomainCandidate] = Field(default_factory=list)
+
+
 class DomainScoreVector(BaseModel):
     """Domain scoring vector exposed to the API."""
 
@@ -300,6 +327,7 @@ class RecommendationResponse(BaseModel):
     mission_profile: MissionProfile
     mission_state: MissionState
     selected_system: SelectedSystemBundle
+    ranked_candidates: RankedCandidatesBundle
     scores: ScoreBundle
     explanations: ExplanationBundle
     ui_enhanced: UIEnhancedNarrative
@@ -366,6 +394,7 @@ class MissionStepResponse(BaseModel):
 
     mission_state: MissionState
     selected_system: SelectedSystemBundle
+    ranked_candidates: RankedCandidatesBundle
     scores: ScoreBundle
     explanations: ExplanationBundle
     ui_enhanced: UIEnhancedNarrative

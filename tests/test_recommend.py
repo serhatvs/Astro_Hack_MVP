@@ -39,6 +39,10 @@ def test_recommend_returns_top_three_sorted_with_ui_fields(monkeypatch) -> None:
     assert data["ui_enhanced"]["crop_note"]
     assert data["ui_enhanced"]["algae_note"]
     assert data["ui_enhanced"]["microbial_note"]
+    assert data["ranked_candidates"]["crop"]
+    assert data["ranked_candidates"]["algae"]
+    assert data["ranked_candidates"]["microbial"]
+    assert data["ranked_candidates"]["crop"][0]["rank"] == 1
     assert len(data["top_crops"]) == 3
     assert data["top_crops"][0]["score"] >= data["top_crops"][1]["score"] >= data["top_crops"][2]["score"]
     assert all(item["reason"] for item in data["top_crops"])
@@ -83,6 +87,7 @@ def test_simulate_returns_ranking_diff_and_risk_delta(monkeypatch) -> None:
     assert len(data["updated_recommendation"]["top_crops"]) == 3
     assert data["updated_recommendation"]["executive_summary"]
     assert data["updated_recommendation"]["ui_enhanced"]["adaptation_summary"]
+    assert data["updated_recommendation"]["ranked_candidates"]["algae"]
     assert data["adaptation_summary"]
     assert data["reason"] == data["adaptation_summary"]
     assert data["adaptation_reason"] == data["adaptation_summary"]
@@ -175,6 +180,9 @@ def test_recommend_returns_stateful_multidomain_payload(monkeypatch) -> None:
     assert data["mission_state"]["active_system"]["algae"][0]["type"] == "algae"
     assert data["mission_state"]["active_system"]["microbial"][0]["type"] == "microbial"
     assert data["selected_system"]["crop"]["support_system"] == data["recommended_system"]
+    assert data["ranked_candidates"]["crop"][0]["type"] == "crop"
+    assert data["ranked_candidates"]["algae"][0]["type"] == "algae"
+    assert data["ranked_candidates"]["microbial"][0]["type"] == "microbial"
     assert "crop" in data["scores"]["domain"]
     assert "interaction" in data["scores"]
     assert data["explanations"]["executive_summary"] == data["executive_summary"]
@@ -223,5 +231,6 @@ def test_mission_step_updates_stored_state(monkeypatch) -> None:
     assert len(data["mission_state"]["history"]) >= 2
     assert data["adaptation_summary"]
     assert data["ui_enhanced"]["adaptation_summary"]
+    assert data["ranked_candidates"]["crop"]
     assert isinstance(data["system_changes"], list)
     assert isinstance(data["risk_delta"], float)

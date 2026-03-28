@@ -9,7 +9,7 @@ from app.engine.algae_engine import AlgaeEngine
 from app.engine.crop_engine import CropEngine
 from app.engine.interaction_engine import InteractionEngine
 from app.engine.microbial_engine import MicrobialEngine
-from app.engine.types import DomainEvaluation, IntegratedResult
+from app.engine.types import DomainEvaluation, DomainRankingSet, IntegratedResult
 from app.models.mission import Environment, MissionProfile
 from app.models.system import GrowingSystem
 from app.services.data_provider import DataProvider
@@ -40,7 +40,7 @@ class IntegrationEngine:
         risk_bias: float = 1.0,
         complexity_bias: float = 1.0,
         loop_bias: float = 1.0,
-    ) -> tuple[IntegratedResult, list[DomainEvaluation], GrowingSystem]:
+    ) -> tuple[IntegratedResult, DomainRankingSet, GrowingSystem]:
         crops = self.provider.get_crops()
         algae_systems = self.provider.get_algae_systems()
         microbial_systems = self.provider.get_microbial_systems()
@@ -50,8 +50,8 @@ class IntegrationEngine:
         crop_rankings_by_system: dict[str, list[DomainEvaluation]] = {}
         grow_system_lookup = {item.system.name: item.system for item in grow_system_rankings}
 
-        algae_rankings = self.algae_engine.evaluate_all(algae_systems, mission)[:3]
-        microbial_rankings = self.microbial_engine.evaluate_all(microbial_systems, mission)[:3]
+        algae_rankings = self.algae_engine.evaluate_all(algae_systems, mission)
+        microbial_rankings = self.microbial_engine.evaluate_all(microbial_systems, mission)
 
         for ranked_system in grow_system_rankings:
             grow_system = ranked_system.system
@@ -66,8 +66,8 @@ class IntegrationEngine:
 
             for crop_eval, algae_eval, microbial_eval in product(
                 crop_rankings[:3],
-                algae_rankings,
-                microbial_rankings,
+                algae_rankings[:3],
+                microbial_rankings[:3],
             ):
                 interaction = self.interaction_engine.evaluate(
                     crop=crop_eval,
@@ -107,7 +107,15 @@ class IntegrationEngine:
                 )
 
         best = max(all_results, key=lambda item: item.integrated_score)
-        return best, crop_rankings_by_system[best.grow_system_name], grow_system_lookup[best.grow_system_name]
+        return (
+            best,
+            DomainRankingSet(
+                crop=crop_rankings_by_system[best.grow_system_name],
+                algae=algae_rankings,
+                microbial=microbial_rankings,
+            ),
+            grow_system_lookup[best.grow_system_name],
+        )
 
     def _environment_system_bonus(self, environment: Environment, system_name: str) -> float:
         if environment is Environment.MARS:

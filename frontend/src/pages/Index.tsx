@@ -45,6 +45,12 @@ const formatLabel = (value: string) =>
 
 const timestamped = (text: string) => `[${new Date().toLocaleTimeString("en-GB")}] ${text}`;
 
+const uiNoteKeyByDomain = {
+  crop: "crop_note",
+  algae: "algae_note",
+  microbial: "microbial_note",
+} as const;
+
 const Index = () => {
   // Temporary UI toggle: keep lower glass panels in code, but hide them from the dashboard for now.
   const showLowerPanels = false;
@@ -324,6 +330,8 @@ const Index = () => {
                       <DomainCard
                         key={`${domain.type}-${domain.name}-${simulation?.change_event || "base"}`}
                         domain={domain}
+                        rankedCandidates={currentRecommendation?.ranked_candidates?.[domain.type] ?? []}
+                        summaryOverride={currentRecommendation?.ui_enhanced?.[uiNoteKeyByDomain[domain.type]] ?? null}
                       />
                     ))
                   : crops.map((crop, index) => (

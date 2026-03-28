@@ -34,6 +34,15 @@ class InteractionEvaluation:
 
 
 @dataclass(slots=True)
+class DomainRankingSet:
+    """Ordered candidates for each biological domain."""
+
+    crop: list[DomainEvaluation]
+    algae: list[DomainEvaluation]
+    microbial: list[DomainEvaluation]
+
+
+@dataclass(slots=True)
 class IntegratedResult:
     """Fully integrated recommendation candidate."""
 

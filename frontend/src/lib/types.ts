@@ -139,6 +139,25 @@ export interface SelectedSystemBundle {
   microbial: SelectedDomainSystem;
 }
 
+export interface RankedDomainCandidate {
+  name: string;
+  type: "crop" | "algae" | "microbial";
+  rank: number;
+  domain_score: number;
+  mission_fit_score: number;
+  risk_score: number;
+  combined_score: number;
+  support_system?: string | null;
+  summary: string;
+  notes: string[];
+}
+
+export interface RankedCandidatesBundle {
+  crop: RankedDomainCandidate[];
+  algae: RankedDomainCandidate[];
+  microbial: RankedDomainCandidate[];
+}
+
 export interface ScoreBundle {
   domain: {
     crop: {
@@ -185,12 +204,22 @@ export interface LLMAnalysis {
   second_pass_decision: Record<string, unknown>;
 }
 
+export interface UIEnhancedNarrative {
+  crop_note: string;
+  algae_note: string;
+  microbial_note: string;
+  executive_summary: string;
+  adaptation_summary: string;
+}
+
 export interface RecommendationResponse {
   mission_profile: MissionPayload;
   mission_state?: MissionState;
   selected_system?: SelectedSystemBundle;
+  ranked_candidates?: RankedCandidatesBundle;
   scores?: ScoreBundle;
   explanations?: ExplanationBundle;
+  ui_enhanced?: UIEnhancedNarrative;
   llm_analysis?: LLMAnalysis;
   top_crops: CropRecommendation[];
   recommended_system: string;
