@@ -651,6 +651,114 @@ def test_mission_step_updates_stored_state(monkeypatch) -> None:
     assert not data["llm_analysis"]["reasoning_summary"].endswith(" -gemini")
 
 
+def test_mission_step_metrics_evolve_gradually_and_remain_clamped(monkeypatch) -> None:
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    bootstrap = client.post(
+        "/simulation/start",
+        json={
+            "mission_profile": {
+                "environment": "moon",
+                "duration": "medium",
+                "constraints": {
+                    "water": "medium",
+                    "energy": "medium",
+                    "area": "medium",
+                },
+                "goal": "balanced",
+            },
+            "selected_crop": "Lactuca sativa (Marul)",
+            "selected_algae": "Chlorella vulgaris",
+            "selected_microbial": "Saccharomyces boulardii",
+        },
+    )
+    assert bootstrap.status_code == 200
+    bootstrap_data = bootstrap.json()
+    mission_id = bootstrap_data["mission_state"]["mission_id"]
+    initial_metrics = bootstrap_data["mission_state"]["system_metrics"]
+
+    step_one = client.post(
+        "/mission/step",
+        json={
+            "mission_id": mission_id,
+            "time_step": 1,
+        },
+    )
+    assert step_one.status_code == 200
+    step_one_metrics = step_one.json()["mission_state"]["system_metrics"]
+
+    step_two = client.post(
+        "/mission/step",
+        json={
+            "mission_id": mission_id,
+            "time_step": 1,
+        },
+    )
+    assert step_two.status_code == 200
+    step_two_metrics = step_two.json()["mission_state"]["system_metrics"]
+
+    tracked_metrics = (
+        "oxygen_level",
+        "co2_balance",
+        "food_supply",
+        "nutrient_cycle_efficiency",
+    )
+    for metric_name in tracked_metrics:
+        assert 0 <= step_one_metrics[metric_name] <= 100
+        assert 0 <= step_two_metrics[metric_name] <= 100
+        assert abs(step_one_metrics[metric_name] - initial_metrics[metric_name]) < 20
+        assert abs(step_two_metrics[metric_name] - step_one_metrics[metric_name]) < 20
+
+    assert step_one_metrics["oxygen_level"] != step_one_metrics["risk_level"]
+    assert step_one_metrics["food_supply"] != step_one_metrics["risk_level"]
+    assert len({round(step_two_metrics[name], 2) for name in tracked_metrics}) > 1
+
+
+def test_mission_step_metrics_respond_to_stress_without_becoming_risk_copies(monkeypatch) -> None:
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    bootstrap = client.post(
+        "/simulation/start",
+        json={
+            "mission_profile": {
+                "environment": "mars",
+                "duration": "medium",
+                "constraints": {
+                    "water": "medium",
+                    "energy": "medium",
+                    "area": "medium",
+                },
+                "goal": "balanced",
+            },
+            "selected_crop": "Lactuca sativa (Marul)",
+            "selected_algae": "Chlorella vulgaris",
+            "selected_microbial": "Saccharomyces boulardii",
+        },
+    )
+    assert bootstrap.status_code == 200
+    bootstrap_data = bootstrap.json()
+    mission_id = bootstrap_data["mission_state"]["mission_id"]
+    initial_metrics = bootstrap_data["mission_state"]["system_metrics"]
+
+    stressed = client.post(
+        "/mission/step",
+        json={
+            "mission_id": mission_id,
+            "time_step": 1,
+            "events": {
+                "water_drop": 14,
+                "contamination": 10,
+            },
+        },
+    )
+    assert stressed.status_code == 200
+    stressed_metrics = stressed.json()["mission_state"]["system_metrics"]
+
+    assert stressed_metrics["risk_level"] != initial_metrics["risk_level"]
+    assert stressed_metrics["oxygen_level"] < initial_metrics["oxygen_level"]
+    assert stressed_metrics["nutrient_cycle_efficiency"] < initial_metrics["nutrient_cycle_efficiency"]
+    assert stressed_metrics["co2_balance"] != stressed_metrics["risk_level"]
+    assert stressed_metrics["food_supply"] != stressed_metrics["risk_level"]
+
+
 def test_mission_step_works_after_simulation_start(monkeypatch) -> None:
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     bootstrap = client.post(

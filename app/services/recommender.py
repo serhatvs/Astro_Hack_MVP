@@ -455,24 +455,30 @@ class RecommendationEngine:
             updated_state=response.mission_state,
             events=request.events,
         )
-        end_reason = self._resolve_simulation_end_reason(cumulative_state)
-        cumulative_state = cumulative_state.model_copy(
+        evolved_state = self._evolve_system_metrics(
+            previous_state=previous_state,
+            updated_state=cumulative_state,
+            events=request.events,
+            weeks=request.time_step,
+        )
+        end_reason = self._resolve_simulation_end_reason(evolved_state)
+        evolved_state = evolved_state.model_copy(
             update={"end_reason": end_reason},
             deep=True,
         )
         mission_status = (
             self._mission_status_from_risk_level(
-                cumulative_state.system_metrics.risk_level,
+                evolved_state.system_metrics.risk_level,
                 end_reason,
             )
         )
         response = response.model_copy(
             update={
-                "mission_state": cumulative_state,
+                "mission_state": evolved_state,
                 "mission_status": mission_status,
             },
         )
-        self.state_store.save(cumulative_state)
+        self.state_store.save(evolved_state)
 
         system_changes = self._build_system_changes(previous_state, response.mission_state)
         risk_delta = cumulative_risk_delta
@@ -1115,14 +1121,45 @@ class RecommendationEngine:
         crop = integrated_result.crop.candidate
         algae = integrated_result.algae.candidate
         microbial = integrated_result.microbial.candidate
-        oxygen_level = min(100.0, (0.45 * crop.oxygen_contribution) + (0.55 * algae.oxygen_contribution))
-        co2_balance = min(100.0, (0.35 * crop.co2_utilization) + (0.45 * algae.co2_utilization) + (0.20 * microbial.loop_closure_contribution))
-        food_supply = min(100.0, (0.45 * crop.calorie_yield) + (0.25 * crop.nutrient_density) + (0.30 * algae.protein_potential))
+        risk_pressure = self._clamp_unit(risk_score)
+        oxygen_level = min(
+            100.0,
+            max(
+                0.0,
+                (0.45 * crop.oxygen_contribution)
+                + (0.55 * algae.oxygen_contribution)
+                - (risk_pressure * 10),
+            ),
+        )
+        co2_balance = min(
+            100.0,
+            max(
+                0.0,
+                (0.35 * crop.co2_utilization)
+                + (0.45 * algae.co2_utilization)
+                + (0.20 * microbial.loop_closure_contribution)
+                - (risk_pressure * 8),
+            ),
+        )
+        food_supply = min(
+            100.0,
+            max(
+                0.0,
+                (0.45 * crop.calorie_yield)
+                + (0.25 * crop.nutrient_density)
+                + (0.30 * algae.protein_potential)
+                - (risk_pressure * 12),
+            ),
+        )
         nutrient_cycle_efficiency = min(
             100.0,
-            (0.30 * crop.waste_recycling_synergy)
-            + (0.40 * microbial.nutrient_conversion_capability)
-            + (0.30 * microbial.loop_closure_contribution),
+            max(
+                0.0,
+                (0.30 * crop.waste_recycling_synergy)
+                + (0.40 * microbial.nutrient_conversion_capability)
+                + (0.30 * microbial.loop_closure_contribution)
+                - (risk_pressure * 9),
+            ),
         )
         return SystemMetricsState(
             oxygen_level=round(oxygen_level, 2),
@@ -1198,6 +1235,13 @@ class RecommendationEngine:
 
     def _clamp_resource(self, value: float) -> float:
         return round(max(0.0, min(100.0, value)), 2)
+
+    def _clamp_unit(self, value: float) -> float:
+        return max(0.0, min(1.0, value))
+
+    def _blend_metric(self, previous: float, target: float, smoothing: float) -> float:
+        blended = previous + ((target - previous) * smoothing)
+        return round(max(0.0, min(100.0, blended)), 2)
 
     def _margin_to_constraint(self, margin: float) -> ConstraintLevel:
         if margin >= 70:
@@ -1494,6 +1538,158 @@ class RecommendationEngine:
                 deep=True,
             ),
             risk_delta,
+        )
+
+    def _evolve_system_metrics(
+        self,
+        previous_state: MissionState,
+        updated_state: MissionState,
+        events: MissionEvents | None,
+        weeks: int,
+    ) -> MissionState:
+        crop, algae, microbial = self._resolve_active_candidates(updated_state)
+        previous_metrics = previous_state.system_metrics
+        current_metrics = updated_state.system_metrics
+        risk_pressure = self._clamp_unit(current_metrics.risk_level / 100)
+        water_buffer = self._clamp_unit(updated_state.resources.water / 100)
+        energy_buffer = self._clamp_unit(updated_state.resources.energy / 100)
+        area_buffer = self._clamp_unit(updated_state.resources.area / 100)
+        resource_stress = self._clamp_unit(
+            (0.45 * (1 - water_buffer))
+            + (0.35 * (1 - energy_buffer))
+            + (0.20 * (1 - area_buffer))
+        )
+
+        photosynthetic_components = sum(
+            1
+            for candidate in (crop, algae, microbial)
+            if candidate is not None and getattr(candidate, "has_photosynthesis", False)
+        )
+        photosynthesis_support = self._clamp_unit(photosynthetic_components / 2)
+        oxygen_support = self._clamp_unit(
+            (0.38 * ((crop.oxygen_contribution / 100) if crop is not None else 0.35))
+            + (0.48 * ((algae.oxygen_contribution / 100) if algae is not None else 0.30))
+            + (0.14 * photosynthesis_support)
+        )
+        co2_support = self._clamp_unit(
+            (0.40 * ((crop.co2_utilization / 100) if crop is not None else 0.32))
+            + (0.46 * ((algae.co2_utilization / 100) if algae is not None else 0.28))
+            + (0.14 * ((microbial.loop_closure_contribution / 100) if microbial is not None else 0.24))
+        )
+        crop_food_support = self._clamp_unit(
+            (0.42 * ((crop.calorie_yield / 100) if crop is not None else 0.34))
+            + (0.30 * ((crop.nutrient_density / 100) if crop is not None else 0.34))
+            + (0.18 * ((crop.crew_acceptance / 100) if crop is not None else 0.34))
+            + (0.10 * (1 - ((crop.growth_time / 100) if crop is not None else 0.5)))
+        )
+        microbial_support = self._clamp_unit(
+            (0.38 * ((microbial.waste_recycling_efficiency / 100) if microbial is not None else 0.28))
+            + (0.34 * ((microbial.nutrient_conversion_capability / 100) if microbial is not None else 0.28))
+            + (0.28 * ((microbial.loop_closure_contribution / 100) if microbial is not None else 0.28))
+        )
+        crop_resource_burden = self._clamp_unit(
+            (0.45 * ((crop.water_need / 100) if crop is not None else 0.35))
+            + (0.30 * ((crop.energy_need / 100) if crop is not None else 0.35))
+            + (0.25 * ((crop.area_need / 100) if crop is not None else 0.30))
+        )
+        energy_support = self._clamp_unit(
+            (updated_state.last_solar_energy + updated_state.last_photosynthesis_energy) / max(2.8 * weeks, 1.0)
+        )
+        recovery_support = self._clamp_unit(
+            (0.70 * updated_state.water_recovery_rate)
+            + (
+                0.30
+                * self._clamp_unit(
+                    updated_state.last_recovered_water / max(2.5 * weeks, 1.0)
+                )
+            )
+        )
+        operational_margin = self._clamp_unit(1 - resource_stress)
+
+        oxygen_event_penalty = 0.0
+        co2_event_penalty = 0.0
+        food_event_penalty = 0.0
+        nutrient_event_penalty = 0.0
+        if events is not None:
+            if events.energy_drop is not None:
+                oxygen_event_penalty += events.energy_drop / 180
+                co2_event_penalty += events.energy_drop / 220
+            if events.water_drop is not None:
+                oxygen_event_penalty += events.water_drop / 280
+                food_event_penalty += events.water_drop / 170
+                nutrient_event_penalty += events.water_drop / 240
+            if events.contamination is not None:
+                co2_event_penalty += events.contamination / 220
+                nutrient_event_penalty += events.contamination / 170
+            if events.yield_variation is not None and events.yield_variation < 0:
+                food_event_penalty += abs(events.yield_variation) / 170
+
+        oxygen_target = 100 * self._clamp_unit(
+            (0.52 * oxygen_support)
+            + (0.12 * co2_support)
+            + (0.10 * energy_support)
+            + (0.08 * water_buffer)
+            + (0.08 * recovery_support)
+            + (0.10 * operational_margin)
+            - (0.18 * risk_pressure)
+            - (0.10 * resource_stress)
+            - oxygen_event_penalty
+        )
+        co2_target = 100 * self._clamp_unit(
+            (0.46 * co2_support)
+            + (0.16 * oxygen_support)
+            + (0.12 * microbial_support)
+            + (0.10 * energy_support)
+            + (0.08 * water_buffer)
+            + (0.08 * operational_margin)
+            - (0.16 * risk_pressure)
+            - (0.10 * resource_stress)
+            - co2_event_penalty
+        )
+        food_target = 100 * self._clamp_unit(
+            (0.58 * crop_food_support)
+            + (0.10 * ((algae.protein_potential / 100) if algae is not None else 0.0))
+            + (0.12 * water_buffer)
+            + (0.10 * energy_buffer)
+            + (0.06 * microbial_support)
+            + (0.06 * recovery_support)
+            - (0.15 * risk_pressure)
+            - (0.16 * resource_stress)
+            - (0.08 * crop_resource_burden)
+            - food_event_penalty
+        )
+        nutrient_target = 100 * self._clamp_unit(
+            (0.55 * microbial_support)
+            + (0.18 * ((crop.waste_recycling_synergy / 100) if crop is not None else 0.24))
+            + (0.12 * recovery_support)
+            + (0.07 * water_buffer)
+            + (0.05 * energy_buffer)
+            + (0.08 * operational_margin)
+            - (0.12 * risk_pressure)
+            - (0.12 * resource_stress)
+            - nutrient_event_penalty
+        )
+
+        smoothing = min(0.48, 0.18 + (0.06 * min(max(weeks, 1), 3)))
+        if events is not None:
+            smoothing = min(0.55, smoothing + 0.04)
+
+        evolved_metrics = current_metrics.model_copy(
+            update={
+                "oxygen_level": self._blend_metric(previous_metrics.oxygen_level, oxygen_target, smoothing),
+                "co2_balance": self._blend_metric(previous_metrics.co2_balance, co2_target, smoothing),
+                "food_supply": self._blend_metric(previous_metrics.food_supply, food_target, smoothing),
+                "nutrient_cycle_efficiency": self._blend_metric(
+                    previous_metrics.nutrient_cycle_efficiency,
+                    nutrient_target,
+                    smoothing,
+                ),
+            },
+            deep=True,
+        )
+        return updated_state.model_copy(
+            update={"system_metrics": evolved_metrics},
+            deep=True,
         )
 
     def _compute_weekly_delta_risk(
