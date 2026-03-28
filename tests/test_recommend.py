@@ -3,6 +3,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.services.data_provider import JSONDataProvider
 
 
 client = TestClient(app)
@@ -376,6 +377,70 @@ def test_water_recovery_returns_after_cycle_delay(monkeypatch) -> None:
     assert latest["mission_state"]["last_consumed_water"] > 0
     assert latest["mission_state"]["last_recovered_water"] > 0
     assert latest["adaptation_summary"].lower().count("water recovery") >= 1
+
+
+def test_photosynthesis_drives_weekly_energy_production(monkeypatch) -> None:
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+    provider = JSONDataProvider()
+    crop = next(item for item in provider.get_crops() if item.name == "Lactuca sativa (Marul)")
+    algae = next(item for item in provider.get_algae_systems() if item.name == "Chlorella vulgaris")
+    microbial = next(item for item in provider.get_microbial_systems() if item.name == "Saccharomyces boulardii")
+    assert crop.has_photosynthesis is True
+    assert algae.has_photosynthesis is True
+    assert microbial.has_photosynthesis is False
+
+    bootstrap = client.post(
+        "/simulation/start",
+        json={
+            "mission_profile": {
+                "environment": "moon",
+                "duration": "medium",
+                "constraints": {
+                    "water": "medium",
+                    "energy": "medium",
+                    "area": "medium",
+                },
+                "goal": "balanced",
+            },
+            "selected_crop": crop.name,
+            "selected_algae": algae.name,
+            "selected_microbial": microbial.name,
+        },
+    )
+    assert bootstrap.status_code == 200
+    bootstrap_data = bootstrap.json()
+    initial_energy = bootstrap_data["mission_state"]["resources"]["energy"]
+
+    response = client.post(
+        "/mission/step",
+        json={
+            "mission_id": bootstrap_data["mission_state"]["mission_id"],
+            "time_step": 1,
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    state = data["mission_state"]
+
+    assert state["last_consumed_energy"] > 0
+    assert state["last_solar_energy"] > 0
+    assert state["last_photosynthesis_energy"] > 0
+
+    expected_energy = round(
+        max(
+            0,
+            min(
+                100,
+                initial_energy
+                - state["last_consumed_energy"]
+                + state["last_solar_energy"]
+                + state["last_photosynthesis_energy"],
+            ),
+        ),
+        2,
+    )
+    assert state["resources"]["energy"] == expected_energy
 
 
 def test_stronger_stack_recovers_water_more_efficiently_than_weaker_stack(monkeypatch) -> None:

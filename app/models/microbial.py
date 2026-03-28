@@ -22,6 +22,7 @@ class MicrobialSystem(BaseModel):
     maintenance_burden: float
     preferred_environments: list[str]
     mission_environments: list[Environment] = Field(default_factory=list)
+    has_photosynthesis: bool = False
     notes: str
 
     def environment_fit_score(self, environment: Environment, fallback: float = 0.72) -> float:

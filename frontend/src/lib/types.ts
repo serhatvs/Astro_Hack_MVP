@@ -119,6 +119,9 @@ export interface MissionState {
   last_recovered_water: number;
   water_recovery_cycle_weeks: number;
   water_recovery_rate: number;
+  last_consumed_energy: number;
+  last_solar_energy: number;
+  last_photosynthesis_energy: number;
   active_system: {
     crops: MissionStateActiveItem[];
     algae: MissionStateActiveItem[];

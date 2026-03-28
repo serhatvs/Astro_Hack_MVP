@@ -98,6 +98,9 @@ class MissionState(BaseModel):
     last_recovered_water: float = Field(default=0, ge=0)
     water_recovery_cycle_weeks: int = Field(default=0, ge=0)
     water_recovery_rate: float = Field(default=0, ge=0, le=1)
+    last_consumed_energy: float = Field(default=0, ge=0)
+    last_solar_energy: float = Field(default=0, ge=0)
+    last_photosynthesis_energy: float = Field(default=0, ge=0)
     active_system: ActiveSystemState
     system_metrics: SystemMetricsState
     history: list[MissionHistoryEntry] = Field(default_factory=list)

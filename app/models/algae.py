@@ -23,6 +23,7 @@ class AlgaeSystem(BaseModel):
     maintenance_complexity: float
     preferred_environments: list[str]
     mission_environments: list[Environment] = Field(default_factory=list)
+    has_photosynthesis: bool = True
     notes: str
 
     def environment_fit_score(self, environment: Environment, fallback: float = 0.72) -> float:

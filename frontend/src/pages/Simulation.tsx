@@ -361,6 +361,9 @@ const Simulation = () => {
   const recoveryQueueSize = missionState.water_recovery_queue?.length ?? 0;
   const recoveryCycleWeeks = missionState.water_recovery_cycle_weeks ?? 0;
   const recoveryRate = missionState.water_recovery_rate ?? 0;
+  const consumedEnergy = missionState.last_consumed_energy ?? 0;
+  const solarEnergy = missionState.last_solar_energy ?? 0;
+  const photosynthesisEnergy = missionState.last_photosynthesis_energy ?? 0;
   const currentRisk = missionState.system_metrics.risk_level;
   const initialRisk = missionState.initial_risk_level ?? currentRisk;
   const previousRisk =
@@ -1122,6 +1125,9 @@ const Simulation = () => {
                 {formatDeltaArrow(missionState.resources.energy - previousSession.mission_state.resources.energy).arrow}
               </p>
             )}
+            <p className="text-xs font-mono text-neon-gold">
+              -{consumedEnergy.toFixed(2)} load | +{solarEnergy.toFixed(2)} solar | +{photosynthesisEnergy.toFixed(2)} photosynthesis
+            </p>
           </div>
           <div className="glass-panel flex min-h-[120px] min-w-0 flex-col gap-2 overflow-hidden p-3">
             <div className="flex items-center gap-2">

@@ -28,6 +28,7 @@ class Crop(BaseModel):
     compatible_systems: list[str]
     preferred_environments: list[str]
     mission_environments: list[Environment] = Field(default_factory=list)
+    has_photosynthesis: bool = True
     notes: str
 
     @property

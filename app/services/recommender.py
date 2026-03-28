@@ -1046,6 +1046,11 @@ class RecommendationEngine:
         last_recovered_water = existing_state.last_recovered_water if existing_state is not None else 0.0
         water_recovery_cycle_weeks = cycle_weeks
         water_recovery_rate = recovery_rate
+        last_consumed_energy = existing_state.last_consumed_energy if existing_state is not None else 0.0
+        last_solar_energy = existing_state.last_solar_energy if existing_state is not None else 0.0
+        last_photosynthesis_energy = (
+            existing_state.last_photosynthesis_energy if existing_state is not None else 0.0
+        )
 
         history.append(
             MissionHistoryEntry(
@@ -1075,6 +1080,9 @@ class RecommendationEngine:
             last_recovered_water=last_recovered_water,
             water_recovery_cycle_weeks=water_recovery_cycle_weeks,
             water_recovery_rate=water_recovery_rate,
+            last_consumed_energy=last_consumed_energy,
+            last_solar_energy=last_solar_energy,
+            last_photosynthesis_energy=last_photosynthesis_energy,
             active_system=ActiveSystemState(
                 crops=[
                     ActiveDomainItem(
@@ -1232,6 +1240,27 @@ class RecommendationEngine:
 
         return crop_cycle, round(max(0.45, min(0.72, recovery_rate)), 3)
 
+    def _compute_weekly_energy_production(
+        self,
+        state: MissionState,
+        weeks: int = 1,
+    ) -> tuple[float, float]:
+        crop, algae, microbial = self._resolve_active_candidates(state)
+        photosynthetic_components = sum(
+            1
+            for candidate in (crop, algae, microbial)
+            if candidate is not None and getattr(candidate, "has_photosynthesis", False)
+        )
+
+        solar_base = {
+            Environment.ISS: 0.9,
+            Environment.MOON: 1.05,
+            Environment.MARS: 0.85,
+        }[state.environment] * weeks
+        photosynthesis_bonus = (0.45 * photosynthetic_components) * weeks
+
+        return round(solar_base, 2), round(photosynthesis_bonus, 2)
+
     def _compute_weekly_resource_demand(
         self,
         state: MissionState,
@@ -1266,15 +1295,20 @@ class RecommendationEngine:
         queue = [entry.model_copy(deep=True) for entry in current_state.water_recovery_queue]
         total_consumed_water = 0.0
         total_recovered_water = 0.0
+        total_consumed_energy = 0.0
+        total_solar_energy = 0.0
+        total_photosynthesis_energy = 0.0
 
         for week_index in range(weeks):
             crop, algae, microbial = self._resolve_active_candidates(current_state)
             cycle_weeks, recovery_rate = self._build_water_recovery_profile(crop, algae, microbial)
             water_use, energy_use, area_use = self._compute_weekly_resource_demand(current_state, 1)
+            solar_energy, photosynthesis_energy = self._compute_weekly_energy_production(current_state, 1)
+            produced_energy = solar_energy + photosynthesis_energy
 
             resources = MissionResources(
                 water=self._clamp_resource(resources.water - water_use),
-                energy=self._clamp_resource(resources.energy - energy_use),
+                energy=self._clamp_resource(resources.energy - energy_use + produced_energy),
                 area=self._clamp_resource(resources.area - area_use),
             )
 
@@ -1308,6 +1342,9 @@ class RecommendationEngine:
 
             total_consumed_water += water_use
             total_recovered_water += recovered_this_week
+            total_consumed_energy += energy_use
+            total_solar_energy += solar_energy
+            total_photosynthesis_energy += photosynthesis_energy
             current_state = current_state.model_copy(
                 update={
                     "time": current_week,
@@ -1317,6 +1354,9 @@ class RecommendationEngine:
                     "last_recovered_water": round(total_recovered_water, 2),
                     "water_recovery_cycle_weeks": cycle_weeks,
                     "water_recovery_rate": recovery_rate,
+                    "last_consumed_energy": round(total_consumed_energy, 2),
+                    "last_solar_energy": round(total_solar_energy, 2),
+                    "last_photosynthesis_energy": round(total_photosynthesis_energy, 2),
                 },
                 deep=True,
             )
@@ -1634,6 +1674,13 @@ class RecommendationEngine:
             fragments.append(
                 f"Water recovery returned {updated_state.last_recovered_water:.1f}% to the loop"
             )
+        if (
+            updated_state.last_solar_energy + updated_state.last_photosynthesis_energy >= 0.5
+            and events is None
+        ):
+            fragments.append(
+                "Solar input and photosynthesis restored part of the weekly energy load"
+            )
 
         if not fragments:
             water_delta = previous_state.resources.water - updated_state.resources.water
@@ -1680,6 +1727,8 @@ class RecommendationEngine:
         crop, algae, microbial = self._resolve_active_candidates(updated_state)
         if updated_state.last_recovered_water >= 0.5 and microbial is not None:
             return f"{microbial.name.title()} helped close the water recovery loop"
+        if updated_state.last_photosynthesis_energy >= 0.5:
+            return "Photosynthetic layers helped sustain the weekly energy budget"
         if crop is not None and updated_state.resources.water <= updated_state.resources.energy:
             return f"{crop.name.title()} set the heaviest weekly resource demand"
         if algae is not None and algae.oxygen_contribution >= 70:

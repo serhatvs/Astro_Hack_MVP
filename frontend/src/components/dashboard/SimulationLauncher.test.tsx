@@ -39,6 +39,9 @@ const recommendation: RecommendationResponse = {
     last_recovered_water: 0,
     water_recovery_cycle_weeks: 6,
     water_recovery_rate: 0.58,
+    last_consumed_energy: 0,
+    last_solar_energy: 0,
+    last_photosynthesis_energy: 0,
     active_system: {
       crops: [],
       algae: [],
