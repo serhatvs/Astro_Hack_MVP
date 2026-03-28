@@ -12,10 +12,10 @@ const AIReasoning = ({ message, isAdaptive, error }: AIReasoningProps) => {
   const textColor = error ? "text-neon-red" : isAdaptive ? "text-neon-orange" : "text-foreground/80";
 
   return (
-    <div className="glass-panel flex h-full min-h-[260px] min-w-0 flex-col overflow-hidden p-3 space-y-2">
+    <div className="glass-panel flex h-full w-full min-h-[260px] min-w-0 flex-col overflow-hidden p-3 space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
-          {isAdaptive ? "Adaptation Summary" : "Mission Summary"}
+          {isAdaptive ? "Adaptation Summary" : "Executive Summary"}
         </h3>
         <span className={`text-[9px] font-mono uppercase px-2 py-0.5 rounded border ${isAdaptive ? "border-neon-orange/50 text-neon-orange" : "border-glass-border text-muted-foreground"}`}>
           {error ? "Backend Error" : isAdaptive ? "Runtime Update" : "Deterministic Report"}

@@ -1,19 +1,19 @@
-import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
+import type { ConstraintLevel } from "@/lib/types";
 
 interface MissionInputProps {
   environment: string;
   setEnvironment: (v: string) => void;
   duration: string;
   setDuration: (v: string) => void;
-  waterLimit: number[];
-  setWaterLimit: (v: number[]) => void;
-  energyLimit: number[];
-  setEnergyLimit: (v: number[]) => void;
-  areaLimit: number[];
-  setAreaLimit: (v: number[]) => void;
+  waterConstraint: ConstraintLevel;
+  setWaterConstraint: (v: ConstraintLevel) => void;
+  energyConstraint: ConstraintLevel;
+  setEnergyConstraint: (v: ConstraintLevel) => void;
+  areaConstraint: ConstraintLevel;
+  setAreaConstraint: (v: ConstraintLevel) => void;
   goal: string;
   setGoal: (v: string) => void;
   onGenerate: () => void;
@@ -23,21 +23,14 @@ interface MissionInputProps {
 const MissionInput = ({
   environment, setEnvironment,
   duration, setDuration,
-  waterLimit, setWaterLimit,
-  energyLimit, setEnergyLimit,
-  areaLimit, setAreaLimit,
+  waterConstraint, setWaterConstraint,
+  energyConstraint, setEnergyConstraint,
+  areaConstraint, setAreaConstraint,
   goal, setGoal,
   onGenerate, isLoading,
 }: MissionInputProps) => {
-  const constraintLevel = (value: number) => {
-    if (value <= 33) {
-      return "LOW";
-    }
-    if (value <= 66) {
-      return "MEDIUM";
-    }
-    return "HIGH";
-  };
+  const formatConstraint = (value: ConstraintLevel) =>
+    value.replace(/\b\w/g, (char) => char.toUpperCase());
 
   return (
     <div className="flex min-w-0 flex-col gap-3">
@@ -97,30 +90,58 @@ const MissionInput = ({
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="min-w-0 space-y-1">
-          <div className="flex justify-between">
-            <label className="text-xs font-mono uppercase tracking-wider text-neon-cyan">Water Limit</label>
-            <span className="text-xs font-mono text-neon-cyan">{waterLimit[0]}% | {constraintLevel(waterLimit[0])}</span>
+          <div className="flex justify-between gap-2">
+            <label className="text-xs font-mono uppercase tracking-wider text-neon-cyan">Water Constraint</label>
+            <span className="text-xs font-mono text-neon-cyan">{formatConstraint(waterConstraint)}</span>
           </div>
-          <Slider value={waterLimit} onValueChange={setWaterLimit} max={100} step={1}
-            className="[&_[role=slider]]:bg-neon-cyan [&_[role=slider]]:border-neon-cyan [&_.range]:bg-neon-cyan/50" />
+          <Select value={waterConstraint} onValueChange={(value) => setWaterConstraint(value as ConstraintLevel)}>
+            <SelectTrigger className="h-9 border-glass-border bg-muted/50 text-sm text-foreground">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="border-glass-border bg-card">
+              <SelectItem value="low">Low</SelectItem>
+              <SelectItem value="medium">Medium</SelectItem>
+              <SelectItem value="high">High</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
         <div className="min-w-0 space-y-1">
-          <div className="flex justify-between">
-            <label className="text-xs font-mono uppercase tracking-wider text-neon-gold">Energy Limit</label>
-            <span className="text-xs font-mono text-neon-gold">{energyLimit[0]}% | {constraintLevel(energyLimit[0])}</span>
+          <div className="flex justify-between gap-2">
+            <label className="text-xs font-mono uppercase tracking-wider text-neon-gold">Energy Constraint</label>
+            <span className="text-xs font-mono text-neon-gold">{formatConstraint(energyConstraint)}</span>
           </div>
-          <Slider value={energyLimit} onValueChange={setEnergyLimit} max={100} step={1}
-            className="[&_[role=slider]]:bg-neon-gold [&_[role=slider]]:border-neon-gold [&_.range]:bg-neon-gold/50" />
+          <Select value={energyConstraint} onValueChange={(value) => setEnergyConstraint(value as ConstraintLevel)}>
+            <SelectTrigger className="h-9 border-glass-border bg-muted/50 text-sm text-foreground">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="border-glass-border bg-card">
+              <SelectItem value="low">Low</SelectItem>
+              <SelectItem value="medium">Medium</SelectItem>
+              <SelectItem value="high">High</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
         <div className="min-w-0 space-y-1">
-          <div className="flex justify-between">
-            <label className="text-xs font-mono uppercase tracking-wider text-neon-purple">Area Limit</label>
-            <span className="text-xs font-mono text-neon-purple">{areaLimit[0]}% | {constraintLevel(areaLimit[0])}</span>
+          <div className="flex justify-between gap-2">
+            <label className="text-xs font-mono uppercase tracking-wider text-neon-purple">Area Constraint</label>
+            <span className="text-xs font-mono text-neon-purple">{formatConstraint(areaConstraint)}</span>
           </div>
-          <Slider value={areaLimit} onValueChange={setAreaLimit} max={100} step={1}
-            className="[&_[role=slider]]:bg-neon-purple [&_[role=slider]]:border-neon-purple [&_.range]:bg-neon-purple/50" />
+          <Select value={areaConstraint} onValueChange={(value) => setAreaConstraint(value as ConstraintLevel)}>
+            <SelectTrigger className="h-9 border-glass-border bg-muted/50 text-sm text-foreground">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="border-glass-border bg-card">
+              <SelectItem value="low">Low</SelectItem>
+              <SelectItem value="medium">Medium</SelectItem>
+              <SelectItem value="high">High</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </div>
+
+      <p className="text-[11px] font-mono text-muted-foreground">
+        Low means fewer limitations. High means stronger constraints.
+      </p>
     </div>
   );
 };

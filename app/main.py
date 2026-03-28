@@ -31,6 +31,22 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    @application.get("/")
+    def root() -> dict[str, object]:
+        """Minimal root route for deployment health visibility."""
+
+        return {
+            "message": "Astro Hack MVP API is running",
+            "status": "ok",
+            "endpoints": [
+                "/health",
+                "/demo-cases",
+                "/recommend",
+                "/simulate",
+            ],
+        }
+
     application.include_router(demo_cases_router)
     application.include_router(health_router)
     application.include_router(recommend_router)

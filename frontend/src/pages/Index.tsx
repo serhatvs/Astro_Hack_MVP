@@ -42,24 +42,14 @@ const crisisEventMap: Record<CrisisType, ChangeEvent> = {
 const formatLabel = (value: string) =>
   value.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
 
-const constraintFromSlider = (value: number): ConstraintLevel => {
-  if (value <= 33) {
-    return "low";
-  }
-  if (value <= 66) {
-    return "medium";
-  }
-  return "high";
-};
-
 const timestamped = (text: string) => `[${new Date().toLocaleTimeString("en-GB")}] ${text}`;
 
 const Index = () => {
   const [environment, setEnvironment] = useState<Environment>("mars");
   const [duration, setDuration] = useState<Duration>("long");
-  const [waterLimit, setWaterLimit] = useState([70]);
-  const [energyLimit, setEnergyLimit] = useState([60]);
-  const [areaLimit, setAreaLimit] = useState([50]);
+  const [waterConstraint, setWaterConstraint] = useState<ConstraintLevel>("high");
+  const [energyConstraint, setEnergyConstraint] = useState<ConstraintLevel>("medium");
+  const [areaConstraint, setAreaConstraint] = useState<ConstraintLevel>("medium");
   const [goal, setGoal] = useState<UiGoal>("balanced");
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSimulating, setIsSimulating] = useState(false);
@@ -74,9 +64,9 @@ const Index = () => {
     environment,
     duration,
     constraints: {
-      water: constraintFromSlider(waterLimit[0]),
-      energy: constraintFromSlider(energyLimit[0]),
-      area: constraintFromSlider(areaLimit[0]),
+      water: waterConstraint,
+      energy: energyConstraint,
+      area: areaConstraint,
     },
     goal: goalMap[goal],
   });
@@ -247,12 +237,12 @@ const Index = () => {
             setEnvironment={setEnvironment}
             duration={duration}
             setDuration={setDuration}
-            waterLimit={waterLimit}
-            setWaterLimit={setWaterLimit}
-            energyLimit={energyLimit}
-            setEnergyLimit={setEnergyLimit}
-            areaLimit={areaLimit}
-            setAreaLimit={setAreaLimit}
+            waterConstraint={waterConstraint}
+            setWaterConstraint={setWaterConstraint}
+            energyConstraint={energyConstraint}
+            setEnergyConstraint={setEnergyConstraint}
+            areaConstraint={areaConstraint}
+            setAreaConstraint={setAreaConstraint}
             goal={goal}
             setGoal={setGoal}
             onGenerate={handleGenerate}
@@ -312,27 +302,28 @@ const Index = () => {
           </div>
         </div>
 
-        <div className="grid auto-rows-fr grid-cols-1 gap-3 md:grid-cols-2 2xl:grid-cols-4">
-          <div className="min-h-[260px] min-w-0">
+        <div className="grid auto-rows-[minmax(260px,1fr)] grid-cols-1 gap-3 md:grid-cols-2 2xl:grid-cols-4">
+          <div className="min-h-[260px] min-w-0 overflow-hidden rounded-xl">
             <SystemPanel recommendation={currentRecommendation} simulation={simulation} isLoading={isGenerating || isSimulating} />
           </div>
-          <div className="min-h-[260px] min-w-0">
+          <div className="min-h-[260px] min-w-0 overflow-hidden rounded-xl">
             <CrisisPanel
               onSimulate={handleCrisis}
               disabled={!hasRecommendation || isGenerating || isSimulating}
               isSimulating={isSimulating}
               hasRecommendation={hasRecommendation}
               lastEvent={simulation?.change_event || null}
+              simulation={simulation}
             />
           </div>
-          <div className="min-h-[260px] min-w-0">
+          <div className="min-h-[260px] min-w-0 overflow-hidden rounded-xl">
             <AIReasoning
               message={simulation?.adaptation_summary || currentRecommendation?.executive_summary || null}
               isAdaptive={isAdaptive}
               error={error}
             />
           </div>
-          <div className="min-h-[260px] min-w-0">
+          <div className="min-h-[260px] min-w-0 overflow-hidden rounded-xl">
             <SystemTerminal entries={terminalEntries} apiStatus={apiStatus} />
           </div>
         </div>

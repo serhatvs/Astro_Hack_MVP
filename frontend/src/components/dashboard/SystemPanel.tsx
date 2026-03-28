@@ -17,7 +17,7 @@ const toWidth = (value: number) => `${Math.max(6, Math.round(value * 100))}%`;
 const SystemPanel = ({ recommendation, simulation, isLoading }: SystemPanelProps) => {
   if (!recommendation) {
     return (
-      <div className="glass-panel flex h-full min-h-[260px] min-w-0 flex-col overflow-hidden p-3 space-y-3">
+      <div className="glass-panel flex h-full w-full min-h-[260px] min-w-0 flex-col overflow-hidden p-3 space-y-3">
         <h3 className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">System & Resources</h3>
         <div className="flex min-h-0 flex-1 items-center justify-center text-center">
           <p className="text-xs font-mono text-muted-foreground">
@@ -58,7 +58,7 @@ const SystemPanel = ({ recommendation, simulation, isLoading }: SystemPanelProps
   ];
 
   return (
-    <div className="glass-panel flex h-full min-h-[260px] min-w-0 flex-col overflow-hidden p-3 space-y-3">
+    <div className="glass-panel flex h-full w-full min-h-[260px] min-w-0 flex-col overflow-hidden p-3 space-y-3">
       <h3 className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">System & Resources</h3>
 
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -118,12 +118,15 @@ const SystemPanel = ({ recommendation, simulation, isLoading }: SystemPanelProps
           <p className="text-[9px] uppercase tracking-wide text-muted-foreground">Tradeoff Summary</p>
           <p className="mt-1 break-words text-[10px] leading-relaxed text-foreground/75">{tradeoff_summary}</p>
         </div>
+        <div className="rounded border border-neon-orange/25 bg-neon-orange/5 p-2">
+          <p className="text-[9px] uppercase tracking-wide text-neon-orange">Operational Note</p>
+          <p className="mt-1 break-words text-[10px] leading-relaxed text-foreground/75">{operational_note}</p>
+        </div>
         {risk_analysis.factors.slice(0, 2).map((factor) => (
           <p key={factor} className="text-[10px] font-mono text-muted-foreground">
             - {factor}
           </p>
         ))}
-        <p className="break-words text-[10px] font-mono text-muted-foreground">{operational_note}</p>
       </div>
 
       {simulation && (

@@ -32,7 +32,7 @@ const SystemTerminal = ({ entries, apiStatus }: SystemTerminalProps) => {
   }, [entries]);
 
   return (
-    <div className="terminal-window flex h-full min-h-[260px] min-w-0 flex-col overflow-hidden p-2">
+    <div className="terminal-window flex h-full w-full min-h-[260px] min-w-0 flex-col overflow-hidden p-2">
       <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-1.5">
           <span className="w-2 h-2 rounded-full bg-neon-red" />

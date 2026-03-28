@@ -125,6 +125,7 @@
     isolation: isolate;
     transform-origin: center;
     will-change: transform;
+    contain: layout paint;
   }
   .gradient-border-card::before {
     content: '';
