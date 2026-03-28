@@ -1,10 +1,14 @@
 import type {
   DemoCase,
   HealthResponse,
+  MissionStepPayload,
+  MissionStepResponse,
   MissionPayload,
   RecommendationResponse,
   SimulationPayload,
   SimulationResponse,
+  SimulationStartPayload,
+  SimulationStartResponse,
 } from "@/lib/types";
 
 const BASE_URL =
@@ -49,6 +53,20 @@ export function recommendMission(payload: MissionPayload): Promise<Recommendatio
 
 export function simulateMission(payload: SimulationPayload): Promise<SimulationResponse> {
   return request<SimulationResponse>("/simulate", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function startSimulation(payload: SimulationStartPayload): Promise<SimulationStartResponse> {
+  return request<SimulationStartResponse>("/simulation/start", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function stepMission(payload: MissionStepPayload): Promise<MissionStepResponse> {
+  return request<MissionStepResponse>("/mission/step", {
     method: "POST",
     body: JSON.stringify(payload),
   });

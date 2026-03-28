@@ -1,29 +1,22 @@
 import { useState } from "react";
 import { AnimatePresence } from "framer-motion";
 import { Loader2 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
 import MissionInput from "@/components/dashboard/MissionInput";
 import LiveTelemetry from "@/components/dashboard/LiveTelemetry";
 import CropCard from "@/components/dashboard/CropCard";
 import DomainCard from "@/components/dashboard/DomainCard";
-import SystemPanel from "@/components/dashboard/SystemPanel";
-import CrisisPanel from "@/components/dashboard/CrisisPanel";
-import AIReasoning from "@/components/dashboard/AIReasoning";
-import SystemTerminal from "@/components/dashboard/SystemTerminal";
-import { recommendMission, simulateMission } from "@/lib/api";
+import SimulationLauncher from "@/components/dashboard/SimulationLauncher";
+import { recommendMission, startSimulation } from "@/lib/api";
 import type {
-  ApiStatus,
   BackendGoal,
-  ChangeEvent,
   ConstraintLevel,
-  CrisisType,
   Duration,
   Environment,
   MissionPayload,
   RecommendationResponse,
-  SimulationResponse,
-  TerminalEntry,
   UiGoal,
 } from "@/lib/types";
 
@@ -34,16 +27,8 @@ const goalMap: Record<UiGoal, BackendGoal> = {
   low_maintenance: "low_maintenance",
 };
 
-const crisisEventMap: Record<CrisisType, ChangeEvent> = {
-  water: "water_drop",
-  energy: "energy_drop",
-  yield: "yield_drop",
-};
-
 const formatLabel = (value: string) =>
   value.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
-
-const timestamped = (text: string) => `[${new Date().toLocaleTimeString("en-GB")}] ${text}`;
 
 const uiNoteKeyByDomain = {
   crop: "crop_note",
@@ -52,8 +37,7 @@ const uiNoteKeyByDomain = {
 } as const;
 
 const Index = () => {
-  // Temporary UI toggle: keep lower glass panels in code, but hide them from the dashboard for now.
-  const showLowerPanels = false;
+  const navigate = useNavigate();
   const [environment, setEnvironment] = useState<Environment>("mars");
   const [duration, setDuration] = useState<Duration>("long");
   const [waterConstraint, setWaterConstraint] = useState<ConstraintLevel>("high");
@@ -61,13 +45,9 @@ const Index = () => {
   const [areaConstraint, setAreaConstraint] = useState<ConstraintLevel>("medium");
   const [goal, setGoal] = useState<UiGoal>("balanced");
   const [isGenerating, setIsGenerating] = useState(false);
-  const [isSimulating, setIsSimulating] = useState(false);
+  const [isStartingSimulation, setIsStartingSimulation] = useState(false);
   const [recommendation, setRecommendation] = useState<RecommendationResponse | null>(null);
-  const [simulation, setSimulation] = useState<SimulationResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [terminalEntries, setTerminalEntries] = useState<TerminalEntry[]>([
-    { level: "info", text: timestamped("Mission control ready. Configure a mission profile and generate a plan.") },
-  ]);
 
   const buildMissionPayload = (): MissionPayload => ({
     environment,
@@ -80,8 +60,7 @@ const Index = () => {
     goal: goalMap[goal],
   });
 
-  const currentRecommendation = simulation?.updated_recommendation ?? recommendation;
-  const currentMission = simulation?.updated_mission_profile ?? recommendation?.mission_profile ?? buildMissionPayload();
+  const currentRecommendation = recommendation;
   const crops = currentRecommendation?.top_crops ?? [];
   const geminiReasoningSummary = currentRecommendation?.llm_analysis?.reasoning_summary?.trim() ?? "";
   const geminiUsed = geminiReasoningSummary.endsWith(" -gemini");
@@ -95,57 +74,16 @@ const Index = () => {
   const visibleCards = selectedStack.length === 3 ? selectedStack : crops;
   const showingIntegratedStack = selectedStack.length === 3;
   const hasRecommendation = Boolean(currentRecommendation);
-  const isAdaptive = Boolean(simulation);
-  const apiStatus: ApiStatus = error
-    ? "error"
-    : isGenerating || isSimulating
-      ? "loading"
-      : simulation
-        ? "warning"
-        : currentRecommendation
-          ? "ready"
-          : "idle";
-
-  const appendTerminalEntries = (...entries: TerminalEntry[]) => {
-    setTerminalEntries((previousEntries) => [...previousEntries, ...entries]);
-  };
 
   const handleGenerate = async () => {
     const missionPayload = buildMissionPayload();
 
     setError(null);
     setIsGenerating(true);
-    setSimulation(null);
-    setTerminalEntries([
-      { level: "info", text: timestamped(`POST /recommend -> ${missionPayload.environment.toUpperCase()} ${missionPayload.duration.toUpperCase()} mission submitted`) },
-      {
-        level: "info",
-        text: timestamped(
-          `Constraints -> water=${missionPayload.constraints.water} energy=${missionPayload.constraints.energy} area=${missionPayload.constraints.area} goal=${missionPayload.goal}`,
-        ),
-      },
-    ]);
 
     try {
       const response = await recommendMission(missionPayload);
       setRecommendation(response);
-
-      appendTerminalEntries(
-        {
-          level: "success",
-          text: timestamped(`Top crops -> ${response.top_crops.map((crop) => formatLabel(crop.name)).join(", ")}`),
-        },
-        {
-          level: "info",
-          text: timestamped(
-            `Primary system -> ${formatLabel(response.recommended_system)} | Status -> ${response.mission_status} | Risk -> ${response.risk_analysis.level.toUpperCase()}`,
-          ),
-        },
-        {
-          level: "info",
-          text: timestamped(`Executive summary -> ${response.executive_summary}`),
-        },
-      );
 
       toast.success("Mission plan generated", {
         description: `${formatLabel(response.top_crops[0].name)} ranked first for the selected mission profile.`,
@@ -153,81 +91,36 @@ const Index = () => {
     } catch (requestError) {
       const message = requestError instanceof Error ? requestError.message : "Unable to reach the backend.";
       setError(message);
-      appendTerminalEntries({ level: "error", text: timestamped(`Recommendation failed -> ${message}`) });
       toast.error("Recommendation failed", { description: message });
     } finally {
       setIsGenerating(false);
     }
   };
 
-  const handleCrisis = async (type: CrisisType) => {
+  const handleStartSimulation = async (selection: {
+    selected_crop: string;
+    selected_algae: string;
+    selected_microbial: string;
+  }) => {
     if (!currentRecommendation) {
       toast.error("Generate a mission plan first", {
-        description: "The dashboard needs a baseline recommendation before it can simulate adaptation.",
+        description: "A simulation needs the current mission recommendation and candidate lists as its starting point.",
       });
       return;
     }
 
-    const changeEvent = crisisEventMap[type];
-    const affectedCrop = type === "yield" ? currentRecommendation.top_crops[0]?.name : undefined;
-
-    setError(null);
-    setIsSimulating(true);
-    appendTerminalEntries(
-      { level: "warn", text: timestamped(`Crisis event -> ${changeEvent}`) },
-      {
-        level: "info",
-        text: timestamped(
-          affectedCrop ? `Applying direct yield penalty to ${formatLabel(affectedCrop)}` : "Recalculating mission priorities",
-        ),
-      },
-    );
-
+    setIsStartingSimulation(true);
     try {
-      const response = await simulateMission({
-        mission_profile: currentMission,
-        change_event: changeEvent,
-        affected_crop: affectedCrop,
-        previous_recommendation: currentRecommendation,
+      const session = await startSimulation({
+        mission_profile: currentRecommendation.mission_profile,
+        ...selection,
       });
-
-      setSimulation(response);
-
-      appendTerminalEntries(
-        {
-          level: response.risk_delta === "increased" ? "warn" : "success",
-          text: timestamped(
-            `Top crop -> ${formatLabel(response.previous_top_crop || "n/a")} => ${formatLabel(response.new_top_crop || "n/a")}`,
-          ),
-        },
-        {
-          level: response.system_changed ? "warn" : "info",
-          text: timestamped(
-            `System -> ${formatLabel(response.previous_system || "n/a")} => ${formatLabel(response.new_system || "n/a")} | Risk delta -> ${response.risk_delta} (${response.risk_score_delta >= 0 ? "+" : ""}${response.risk_score_delta.toFixed(3)})`,
-          ),
-        },
-        {
-          level: "info",
-          text: timestamped(
-            `Mission status -> ${response.previous_mission_status} => ${response.new_mission_status}`,
-          ),
-        },
-        {
-          level: "info",
-          text: timestamped(`Adaptation summary -> ${response.adaptation_summary}`),
-        },
-      );
-
-      toast.warning("Crisis simulation updated", {
-        description: response.adaptation_summary,
-      });
+      navigate("/simulation", { state: { session } });
     } catch (requestError) {
-      const message = requestError instanceof Error ? requestError.message : "Unable to run simulation.";
-      setError(message);
-      appendTerminalEntries({ level: "error", text: timestamped(`Simulation failed -> ${message}`) });
-      toast.error("Simulation failed", { description: message });
+      const message = requestError instanceof Error ? requestError.message : "Unable to start the ecosystem simulation.";
+      toast.error("Simulation launch failed", { description: message });
     } finally {
-      setIsSimulating(false);
+      setIsStartingSimulation(false);
     }
   };
 
@@ -328,7 +221,7 @@ const Index = () => {
                 {showingIntegratedStack
                   ? selectedStack.map((domain) => (
                       <DomainCard
-                        key={`${domain.type}-${domain.name}-${simulation?.change_event || "base"}`}
+                        key={`${domain.type}-${domain.name}-base`}
                         domain={domain}
                         rankedCandidates={currentRecommendation?.ranked_candidates?.[domain.type] ?? []}
                         summaryOverride={currentRecommendation?.ui_enhanced?.[uiNoteKeyByDomain[domain.type]] ?? null}
@@ -336,7 +229,7 @@ const Index = () => {
                     ))
                   : crops.map((crop, index) => (
                       <CropCard
-                        key={`${crop.name}-${simulation?.change_event || "base"}`}
+                        key={`${crop.name}-base`}
                         crop={crop}
                         rank={index + 1}
                         showChart={index === 0}
@@ -362,33 +255,13 @@ const Index = () => {
           </div>
         </div>
 
-        {showLowerPanels && (
-          <div className="grid auto-rows-[minmax(260px,1fr)] grid-cols-1 gap-3 md:grid-cols-2 2xl:grid-cols-4">
-            <div className="min-h-[260px] min-w-0 overflow-hidden rounded-xl">
-              <SystemPanel recommendation={currentRecommendation} simulation={simulation} isLoading={isGenerating || isSimulating} />
-            </div>
-            <div className="min-h-[260px] min-w-0 overflow-hidden rounded-xl">
-              <CrisisPanel
-                onSimulate={handleCrisis}
-                disabled={!hasRecommendation || isGenerating || isSimulating}
-                isSimulating={isSimulating}
-                hasRecommendation={hasRecommendation}
-                lastEvent={simulation?.change_event || null}
-                simulation={simulation}
-              />
-            </div>
-            <div className="min-h-[260px] min-w-0 overflow-hidden rounded-xl">
-              <AIReasoning
-                message={simulation?.adaptation_summary || currentRecommendation?.executive_summary || null}
-                isAdaptive={isAdaptive}
-                error={error}
-              />
-            </div>
-            <div className="min-h-[260px] min-w-0 overflow-hidden rounded-xl">
-              <SystemTerminal entries={terminalEntries} apiStatus={apiStatus} />
-            </div>
-          </div>
-        )}
+        <div className="min-w-0 overflow-hidden rounded-xl">
+          <SimulationLauncher
+            recommendation={currentRecommendation}
+            isStarting={isStartingSimulation}
+            onStart={handleStartSimulation}
+          />
+        </div>
       </div>
     </div>
   );

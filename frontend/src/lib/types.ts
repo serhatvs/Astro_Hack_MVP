@@ -103,6 +103,7 @@ export interface MissionState {
   environment: Environment;
   duration: Duration;
   goal: BackendGoal;
+  constraints: MissionConstraints;
   time: number;
   resources: MissionStateResourceSet;
   active_system: {
@@ -242,6 +243,26 @@ export interface SimulationPayload {
   previous_recommendation?: RecommendationResponse;
 }
 
+export interface SimulationStartPayload {
+  mission_profile: MissionPayload;
+  selected_crop: string;
+  selected_algae: string;
+  selected_microbial: string;
+}
+
+export interface SimulationStartResponse {
+  mission_profile: MissionPayload;
+  mission_state: MissionState;
+  selected_system: SelectedSystemBundle;
+  ranked_candidates: RankedCandidatesBundle;
+  scores: ScoreBundle;
+  explanations: ExplanationBundle;
+  ui_enhanced: UIEnhancedNarrative;
+  llm_analysis: LLMAnalysis;
+  mission_status: MissionStatus;
+  operational_note: string;
+}
+
 export interface SimulationResponse {
   change_event: ChangeEvent;
   changed_fields: string[];
@@ -260,6 +281,36 @@ export interface SimulationResponse {
   adaptation_summary: string;
   reason: string;
   adaptation_reason: string;
+}
+
+export interface MissionEventsPayload {
+  water_drop?: number;
+  energy_drop?: number;
+  contamination?: number;
+  yield_variation?: number;
+}
+
+export interface MissionStepPayload {
+  mission_id: string;
+  time_step: number;
+  events?: MissionEventsPayload;
+}
+
+export interface MissionStepResponse {
+  mission_state: MissionState;
+  selected_system: SelectedSystemBundle;
+  ranked_candidates: RankedCandidatesBundle;
+  scores: ScoreBundle;
+  explanations: ExplanationBundle;
+  ui_enhanced: UIEnhancedNarrative;
+  llm_analysis: LLMAnalysis;
+  mission_status: MissionStatus;
+  operational_note: string;
+  system_changes: string[];
+  risk_delta: number;
+  adaptation_summary: string;
+  events?: MissionEventsPayload | null;
+  request: MissionStepPayload;
 }
 
 export interface TerminalEntry {

@@ -38,6 +38,8 @@ from app.models.response import (
     RankedDomainCandidate,
     RiskDelta,
     ScoreBundle,
+    SimulationStartRequest,
+    SimulationStartResponse,
     SelectedDomainSystem,
     SelectedSystemBundle,
     SimulationRequest,
@@ -131,116 +133,93 @@ class RecommendationEngine:
             allow_refinement=allow_refinement,
             invoke_gemini=source == "recommend",
         )
-        llm_analysis = narrative.debug_layer
-        ui_enhanced = narrative.ui_layer
-
-        filtered_crops = [
-            crop
-            for crop in self.provider.get_crops()
-            if crop.name.lower() not in ALGAE_LIKE_NAMES
-        ]
-        ranked_crops = score_crops(
-            crops=filtered_crops,
+        return self._compose_recommendation_response(
             mission=mission,
-            selected_system=selected_grow_system,
+            integrated_result=integrated_result,
+            ranked_candidates=ranked_candidates,
+            selected_grow_system=selected_grow_system,
+            llm_analysis=narrative.debug_layer,
+            ui_enhanced=narrative.ui_layer,
             temporary_penalties=temporary_penalties,
             weight_adjustments=weight_adjustments,
-        )
-        top_ranked_crops = ranked_crops[:3]
-
-        crop_recommendations: list[CropRecommendation] = []
-        for item in top_ranked_crops:
-            strengths = self.explainer.build_crop_strengths(item, mission)
-            crop_recommendations.append(
-                CropRecommendation(
-                    name=item.crop.name,
-                    score=round(item.score, 3),
-                    reason=self.explainer.build_crop_reason(item, mission, selected_grow_system, strengths),
-                    selected_system=selected_grow_system.name,
-                    strengths=strengths,
-                    tradeoffs=self.explainer.build_crop_tradeoffs(item, mission),
-                    metric_breakdown=self.explainer.build_metric_breakdown(item),
-                    compatibility_score=self.explainer.build_compatibility_score(item, mission, selected_grow_system),
-                )
-            )
-
-        resource_plan = self.resource_planner.build_plan(top_ranked_crops, selected_grow_system)
-        risk_analysis = evaluate_risk(mission, selected_grow_system, top_ranked_crops)
-
-        system_reasoning = self._build_integrated_system_reasoning(
-            mission=mission,
-            grow_system_name=selected_grow_system.name,
-            integrated_result=integrated_result,
-        )
-        why_this_system = self._build_why_this_system(
-            mission=mission,
-            grow_system_name=selected_grow_system.name,
-            integrated_result=integrated_result,
-        )
-        lead_crop_compatibility = crop_recommendations[0].compatibility_score if crop_recommendations else 0.5
-        mission_status = self.explainer.build_mission_status(
-            mission=mission,
-            risk_analysis=risk_analysis,
-            selected_system=selected_grow_system,
-            lead_crop_compatibility_score=lead_crop_compatibility,
-            penalty_on_previous_lead_crop=status_penalty,
-        )
-        executive_summary = self._build_executive_summary(
-            mission=mission,
-            integrated_result=integrated_result,
-            grow_system_name=selected_grow_system.name,
-            mission_status=mission_status,
-        )
-        operational_note = self._build_operational_note(
-            risk_analysis=risk_analysis,
-            integrated_result=integrated_result,
-            llm_analysis=llm_analysis,
-        )
-        tradeoff_summary = self._build_tradeoff_summary(
-            integrated_result=integrated_result,
-            grow_system_name=selected_grow_system.name,
-        )
-        weak_points = self._build_weak_points(llm_analysis, risk_analysis)
-        explanation = f"{executive_summary} {operational_note}"
-
-        mission_state = self._build_mission_state(
-            mission=mission,
-            integrated_result=integrated_result,
-            risk_score=risk_analysis.score,
+            status_penalty=status_penalty,
             existing_state=existing_state,
-            summary=executive_summary,
+            persist_state=persist_state,
             history_event=history_event,
         )
-        if persist_state:
-            self.state_store.save(mission_state)
 
-        return RecommendationResponse(
-            mission_profile=mission,
-            mission_state=mission_state,
-            selected_system=self._build_selected_system(integrated_result),
-            ranked_candidates=self._build_ranked_candidates(ranked_candidates),
-            scores=self._build_scores(integrated_result),
-            explanations=ExplanationBundle(
-                executive_summary=executive_summary,
-                system_reasoning=system_reasoning,
-                tradeoffs=tradeoff_summary,
-                weak_points=weak_points,
-            ),
-            ui_enhanced=ui_enhanced,
-            llm_analysis=llm_analysis,
-            top_crops=crop_recommendations,
-            recommended_system=selected_grow_system.name,
-            system_reason=system_reasoning,
-            system_reasoning=system_reasoning,
-            why_this_system=why_this_system,
-            tradeoff_summary=tradeoff_summary,
-            resource_plan=resource_plan,
-            risk_analysis=risk_analysis,
-            mission_status=mission_status,
-            executive_summary=executive_summary,
-            operational_note=operational_note,
-            explanation=explanation,
+    def start_simulation(self, request: SimulationStartRequest) -> SimulationStartResponse:
+        """Bootstrap a stateful ecosystem simulation from a user-selected stack."""
+
+        try:
+            integrated_result, ranked_candidates, selected_grow_system = (
+                self.integration_engine.evaluate_selected_configuration(
+                    mission=request.mission_profile,
+                    selected_crop_name=request.selected_crop,
+                    selected_algae_name=request.selected_algae,
+                    selected_microbial_name=request.selected_microbial,
+                )
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        provisional_explanations = self._build_reasoning_context_explanations(
+            mission=request.mission_profile,
+            integrated_result=integrated_result,
+            grow_system_name=selected_grow_system.name,
         )
+        provisional_state_summary = self._build_reasoning_state_summary(
+            mission=request.mission_profile,
+            integrated_result=integrated_result,
+            existing_state=None,
+        )
+        integrated_result, ranked_candidates, selected_grow_system, narrative = self.reasoning_loop.run(
+            mission=request.mission_profile,
+            result=integrated_result,
+            top_crop_rankings=ranked_candidates,
+            grow_system=selected_grow_system,
+            temporary_penalties={},
+            base_biases={
+                "risk_bias": 1.0,
+                "complexity_bias": 1.0,
+                "loop_bias": 1.0,
+            },
+            source="simulation_start",
+            deterministic_explanations=provisional_explanations,
+            mission_state=provisional_state_summary,
+            previous_state=None,
+            events=None,
+            deltas={
+                "custom_selection": {
+                    "crop": request.selected_crop,
+                    "algae": request.selected_algae,
+                    "microbial": request.selected_microbial,
+                }
+            },
+            allow_refinement=False,
+            invoke_gemini=True,
+        )
+
+        recommendation = self._compose_recommendation_response(
+            mission=request.mission_profile,
+            integrated_result=integrated_result,
+            ranked_candidates=ranked_candidates,
+            selected_grow_system=selected_grow_system,
+            llm_analysis=narrative.debug_layer,
+            ui_enhanced=narrative.ui_layer,
+            temporary_penalties=None,
+            weight_adjustments=None,
+            status_penalty=False,
+            existing_state=None,
+            persist_state=True,
+            history_event="simulation_start",
+            lead_crop_compatibility_override=self._build_selected_crop_compatibility(
+                mission=request.mission_profile,
+                integrated_result=integrated_result,
+                selected_grow_system=selected_grow_system,
+            ),
+        )
+        return SimulationStartResponse.from_recommendation(recommendation)
 
     def simulate(self, request: SimulationRequest) -> SimulationResponse:
         baseline_recommendation = request.previous_recommendation or self.recommend(
@@ -463,11 +442,171 @@ class RecommendationEngine:
             explanations=response.explanations,
             ui_enhanced=step_narrative.ui_layer,
             llm_analysis=step_narrative.debug_layer,
+            mission_status=response.mission_status,
+            operational_note=response.operational_note,
             system_changes=system_changes,
             risk_delta=risk_delta,
             adaptation_summary=adaptation_summary,
             events=request.events,
             request=request,
+        )
+
+    def _compose_recommendation_response(
+        self,
+        *,
+        mission: MissionProfile,
+        integrated_result,
+        ranked_candidates,
+        selected_grow_system,
+        llm_analysis,
+        ui_enhanced,
+        temporary_penalties: Mapping[str, float] | None,
+        weight_adjustments: Mapping[str, float] | None,
+        status_penalty: bool,
+        existing_state: MissionState | None,
+        persist_state: bool,
+        history_event: str,
+        lead_crop_compatibility_override: float | None = None,
+    ) -> RecommendationResponse:
+        filtered_crops = [
+            crop
+            for crop in self.provider.get_crops()
+            if crop.name.lower() not in ALGAE_LIKE_NAMES
+        ]
+        ranked_crops = score_crops(
+            crops=filtered_crops,
+            mission=mission,
+            selected_system=selected_grow_system,
+            temporary_penalties=temporary_penalties,
+            weight_adjustments=weight_adjustments,
+        )
+        top_ranked_crops = ranked_crops[:3]
+
+        crop_recommendations: list[CropRecommendation] = []
+        for item in top_ranked_crops:
+            strengths = self.explainer.build_crop_strengths(item, mission)
+            crop_recommendations.append(
+                CropRecommendation(
+                    name=item.crop.name,
+                    score=round(item.score, 3),
+                    reason=self.explainer.build_crop_reason(item, mission, selected_grow_system, strengths),
+                    selected_system=selected_grow_system.name,
+                    strengths=strengths,
+                    tradeoffs=self.explainer.build_crop_tradeoffs(item, mission),
+                    metric_breakdown=self.explainer.build_metric_breakdown(item),
+                    compatibility_score=self.explainer.build_compatibility_score(item, mission, selected_grow_system),
+                )
+            )
+
+        resource_plan = self.resource_planner.build_plan(top_ranked_crops, selected_grow_system)
+        risk_analysis = evaluate_risk(mission, selected_grow_system, top_ranked_crops)
+
+        system_reasoning = self._build_integrated_system_reasoning(
+            mission=mission,
+            grow_system_name=selected_grow_system.name,
+            integrated_result=integrated_result,
+        )
+        why_this_system = self._build_why_this_system(
+            mission=mission,
+            grow_system_name=selected_grow_system.name,
+            integrated_result=integrated_result,
+        )
+        lead_crop_compatibility = (
+            lead_crop_compatibility_override
+            if lead_crop_compatibility_override is not None
+            else (crop_recommendations[0].compatibility_score if crop_recommendations else 0.5)
+        )
+        mission_status = self.explainer.build_mission_status(
+            mission=mission,
+            risk_analysis=risk_analysis,
+            selected_system=selected_grow_system,
+            lead_crop_compatibility_score=lead_crop_compatibility,
+            penalty_on_previous_lead_crop=status_penalty,
+        )
+        executive_summary = self._build_executive_summary(
+            mission=mission,
+            integrated_result=integrated_result,
+            grow_system_name=selected_grow_system.name,
+            mission_status=mission_status,
+        )
+        operational_note = self._build_operational_note(
+            risk_analysis=risk_analysis,
+            integrated_result=integrated_result,
+            llm_analysis=llm_analysis,
+        )
+        tradeoff_summary = self._build_tradeoff_summary(
+            integrated_result=integrated_result,
+            grow_system_name=selected_grow_system.name,
+        )
+        weak_points = self._build_weak_points(llm_analysis, risk_analysis)
+        explanation = f"{executive_summary} {operational_note}"
+
+        mission_state = self._build_mission_state(
+            mission=mission,
+            integrated_result=integrated_result,
+            risk_score=risk_analysis.score,
+            existing_state=existing_state,
+            summary=executive_summary,
+            history_event=history_event,
+        )
+        if persist_state:
+            self.state_store.save(mission_state)
+
+        return RecommendationResponse(
+            mission_profile=mission,
+            mission_state=mission_state,
+            selected_system=self._build_selected_system(integrated_result),
+            ranked_candidates=self._build_ranked_candidates(ranked_candidates),
+            scores=self._build_scores(integrated_result),
+            explanations=ExplanationBundle(
+                executive_summary=executive_summary,
+                system_reasoning=system_reasoning,
+                tradeoffs=tradeoff_summary,
+                weak_points=weak_points,
+            ),
+            ui_enhanced=ui_enhanced,
+            llm_analysis=llm_analysis,
+            top_crops=crop_recommendations,
+            recommended_system=selected_grow_system.name,
+            system_reason=system_reasoning,
+            system_reasoning=system_reasoning,
+            why_this_system=why_this_system,
+            tradeoff_summary=tradeoff_summary,
+            resource_plan=resource_plan,
+            risk_analysis=risk_analysis,
+            mission_status=mission_status,
+            executive_summary=executive_summary,
+            operational_note=operational_note,
+            explanation=explanation,
+        )
+
+    def _build_selected_crop_compatibility(
+        self,
+        *,
+        mission: MissionProfile,
+        integrated_result,
+        selected_grow_system,
+    ) -> float:
+        crop = integrated_result.crop.candidate
+        system_fit = crop.system_fit_score(selected_grow_system.name, fallback=0.72)
+        environment_fit = crop.environment_fit_score(mission.environment, fallback=0.72)
+        closed_loop_fit = (
+            crop.nutrient_density
+            + crop.oxygen_contribution
+            + crop.co2_utilization
+            + crop.waste_recycling_synergy
+            + crop.crew_acceptance
+        ) / 500
+        stability_fit = 1 - integrated_result.crop.risk_score
+        return round(
+            min(
+                1.0,
+                (0.45 * system_fit)
+                + (0.20 * environment_fit)
+                + (0.20 * closed_loop_fit)
+                + (0.15 * stability_fit),
+            ),
+            3,
         )
 
     def _build_reasoning_context_explanations(

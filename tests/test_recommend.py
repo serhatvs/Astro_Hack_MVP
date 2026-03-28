@@ -193,6 +193,72 @@ def test_recommend_returns_stateful_multidomain_payload(monkeypatch) -> None:
     assert "crop_note" in data["ui_enhanced"]
 
 
+def test_simulation_start_bootstraps_selected_stack(monkeypatch) -> None:
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    baseline = client.post(
+        "/recommend",
+        json={
+            "environment": "mars",
+            "duration": "long",
+            "constraints": {
+                "water": "medium",
+                "energy": "medium",
+                "area": "medium",
+            },
+            "goal": "balanced",
+        },
+    )
+    assert baseline.status_code == 200
+    baseline_data = baseline.json()
+
+    response = client.post(
+        "/simulation/start",
+        json={
+            "mission_profile": baseline_data["mission_profile"],
+            "selected_crop": baseline_data["selected_system"]["crop"]["name"],
+            "selected_algae": baseline_data["selected_system"]["algae"]["name"],
+            "selected_microbial": baseline_data["selected_system"]["microbial"]["name"],
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["mission_state"]["mission_id"]
+    assert data["selected_system"]["crop"]["name"] == baseline_data["selected_system"]["crop"]["name"]
+    assert data["selected_system"]["algae"]["name"] == baseline_data["selected_system"]["algae"]["name"]
+    assert data["selected_system"]["microbial"]["name"] == baseline_data["selected_system"]["microbial"]["name"]
+    assert data["ranked_candidates"]["crop"]
+    assert data["scores"]["integrated"] >= 0
+    assert data["mission_status"] in {"NOMINAL", "WATCH", "CRITICAL"}
+    assert data["operational_note"]
+    assert data["ui_enhanced"]["executive_summary"]
+
+
+def test_simulation_start_rejects_invalid_selected_names(monkeypatch) -> None:
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    response = client.post(
+        "/simulation/start",
+        json={
+            "mission_profile": {
+                "environment": "mars",
+                "duration": "long",
+                "constraints": {
+                    "water": "medium",
+                    "energy": "medium",
+                    "area": "medium",
+                },
+                "goal": "balanced",
+            },
+            "selected_crop": "not-a-real-crop",
+            "selected_algae": "Chlorella vulgaris",
+            "selected_microbial": "Saccharomyces boulardii",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "not compatible" in response.json()["detail"].lower() or "not found" in response.json()["detail"].lower()
+
+
 def test_mission_step_updates_stored_state(monkeypatch) -> None:
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     baseline = client.post(
@@ -234,3 +300,47 @@ def test_mission_step_updates_stored_state(monkeypatch) -> None:
     assert data["ranked_candidates"]["crop"]
     assert isinstance(data["system_changes"], list)
     assert isinstance(data["risk_delta"], float)
+
+
+def test_mission_step_works_after_simulation_start(monkeypatch) -> None:
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    bootstrap = client.post(
+        "/simulation/start",
+        json={
+            "mission_profile": {
+                "environment": "moon",
+                "duration": "medium",
+                "constraints": {
+                    "water": "medium",
+                    "energy": "medium",
+                    "area": "medium",
+                },
+                "goal": "balanced",
+            },
+            "selected_crop": "Lactuca sativa (Marul)",
+            "selected_algae": "Arthrospira platensis (Spirulina)",
+            "selected_microbial": "Saccharomyces boulardii",
+        },
+    )
+    assert bootstrap.status_code == 200
+    mission_id = bootstrap.json()["mission_state"]["mission_id"]
+
+    response = client.post(
+        "/mission/step",
+        json={
+            "mission_id": mission_id,
+            "time_step": 2,
+            "events": {
+                "water_drop": 10,
+                "contamination": 15,
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["mission_state"]["mission_id"] == mission_id
+    assert data["mission_state"]["time"] == 2
+    assert data["mission_status"] in {"NOMINAL", "WATCH", "CRITICAL"}
+    assert data["operational_note"]
+    assert data["adaptation_summary"]

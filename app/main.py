@@ -43,6 +43,7 @@ def create_app() -> FastAPI:
                 "/health",
                 "/demo-cases",
                 "/recommend",
+                "/simulation/start",
                 "/simulate",
                 "/mission/step",
             ],

@@ -352,6 +352,51 @@ class RiskDelta(StrEnum):
     UNCHANGED = "unchanged"
 
 
+class SimulationStartRequest(BaseModel):
+    """Request body for launching a custom ecosystem simulation session."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    mission_profile: MissionProfile
+    selected_crop: str
+    selected_algae: str
+    selected_microbial: str
+
+
+class SimulationStartResponse(BaseModel):
+    """Bootstrap payload returned when a custom simulation session starts."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    mission_profile: MissionProfile
+    mission_state: MissionState
+    selected_system: SelectedSystemBundle
+    ranked_candidates: RankedCandidatesBundle
+    scores: ScoreBundle
+    explanations: ExplanationBundle
+    ui_enhanced: UIEnhancedNarrative
+    llm_analysis: LLMAnalysis
+    mission_status: MissionStatus
+    operational_note: str
+
+    @classmethod
+    def from_recommendation(cls, recommendation: RecommendationResponse) -> "SimulationStartResponse":
+        """Project a full recommendation into the lighter simulation bootstrap shape."""
+
+        return cls(
+            mission_profile=recommendation.mission_profile,
+            mission_state=recommendation.mission_state,
+            selected_system=recommendation.selected_system,
+            ranked_candidates=recommendation.ranked_candidates,
+            scores=recommendation.scores,
+            explanations=recommendation.explanations,
+            ui_enhanced=recommendation.ui_enhanced,
+            llm_analysis=recommendation.llm_analysis,
+            mission_status=recommendation.mission_status,
+            operational_note=recommendation.operational_note,
+        )
+
+
 class SimulationRequest(BaseModel):
     """Request body for lightweight runtime adaptation simulation."""
 
@@ -399,6 +444,8 @@ class MissionStepResponse(BaseModel):
     explanations: ExplanationBundle
     ui_enhanced: UIEnhancedNarrative
     llm_analysis: LLMAnalysis
+    mission_status: MissionStatus
+    operational_note: str
     system_changes: list[str] = Field(default_factory=list)
     risk_delta: float
     adaptation_summary: str

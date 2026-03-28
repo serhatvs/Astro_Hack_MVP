@@ -5,11 +5,24 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from app.core.simulation import MissionStepRequest
-from app.models.response import MissionStepResponse, SimulationRequest, SimulationResponse
+from app.models.response import (
+    MissionStepResponse,
+    SimulationRequest,
+    SimulationResponse,
+    SimulationStartRequest,
+    SimulationStartResponse,
+)
 from app.services.recommender import get_default_engine
 
 
 router = APIRouter(tags=["mission"])
+
+
+@router.post("/simulation/start", response_model=SimulationStartResponse)
+def start_simulation(payload: SimulationStartRequest) -> SimulationStartResponse:
+    """Bootstrap a stateful mission simulation from a user-selected ecosystem stack."""
+
+    return get_default_engine().start_simulation(payload)
 
 
 @router.post("/simulate", response_model=SimulationResponse)

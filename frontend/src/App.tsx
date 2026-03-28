@@ -2,6 +2,7 @@ import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import Index from "./pages/Index.tsx";
+import Simulation from "./pages/Simulation.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const App = () => (
@@ -10,6 +11,7 @@ const App = () => (
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Index />} />
+        <Route path="/simulation" element={<Simulation />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </BrowserRouter>
