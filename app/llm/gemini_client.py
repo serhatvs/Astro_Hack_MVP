@@ -16,8 +16,8 @@ logger = logging.getLogger(__name__)
 class GeminiClient:
     """Thin optional wrapper around the Google GenAI SDK."""
 
-    def __init__(self, model: str = "gemini-3-flash-preview") -> None:
-        self.model = model
+    def __init__(self, model: str = "gemini-2.5-flash") -> None:
+        self.model = os.getenv("GEMINI_MODEL", model)
         self.api_key = os.getenv("GEMINI_API_KEY")
 
     def is_available(self) -> bool:
