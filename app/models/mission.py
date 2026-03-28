@@ -36,6 +36,8 @@ class ChangeEvent(StrEnum):
     WATER_DROP = "water_drop"
     ENERGY_DROP = "energy_drop"
     YIELD_DROP = "yield_drop"
+    CONTAMINATION = "contamination"
+    YIELD_VARIATION = "yield_variation"
 
 
 class MissionConstraints(BaseModel):
@@ -67,4 +69,3 @@ def downgrade_constraint(level: ConstraintLevel) -> ConstraintLevel:
     if level is ConstraintLevel.MEDIUM:
         return ConstraintLevel.LOW
     return ConstraintLevel.LOW
-

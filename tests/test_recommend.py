@@ -141,3 +141,75 @@ def test_openapi_and_requirements_have_no_external_ai_runtime_dependency(monkeyp
     requirements_text = (Path(__file__).resolve().parents[1] / "requirements.txt").read_text(encoding="utf-8").lower()
     assert "openai" not in requirements_text
     assert "anthropic" not in requirements_text
+
+
+def test_recommend_returns_stateful_multidomain_payload(monkeypatch) -> None:
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+    response = client.post(
+        "/recommend",
+        json={
+            "environment": "mars",
+            "duration": "long",
+            "constraints": {
+                "water": "medium",
+                "energy": "medium",
+                "area": "medium",
+            },
+            "goal": "balanced",
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["mission_state"]["mission_id"]
+    assert data["mission_state"]["active_system"]["crops"][0]["type"] == "crop"
+    assert data["mission_state"]["active_system"]["algae"][0]["type"] == "algae"
+    assert data["mission_state"]["active_system"]["microbial"][0]["type"] == "microbial"
+    assert data["selected_system"]["crop"]["support_system"] == data["recommended_system"]
+    assert "crop" in data["scores"]["domain"]
+    assert "interaction" in data["scores"]
+    assert data["explanations"]["executive_summary"] == data["executive_summary"]
+    assert data["llm_analysis"]["reasoning_summary"]
+    assert isinstance(data["llm_analysis"]["weaknesses"], list)
+    assert "second_pass" in data["llm_analysis"]
+
+
+def test_mission_step_updates_stored_state() -> None:
+    baseline = client.post(
+        "/recommend",
+        json={
+            "environment": "moon",
+            "duration": "medium",
+            "constraints": {
+                "water": "medium",
+                "energy": "medium",
+                "area": "medium",
+            },
+            "goal": "balanced",
+        },
+    )
+    assert baseline.status_code == 200
+    mission_state = baseline.json()["mission_state"]
+
+    response = client.post(
+        "/mission/step",
+        json={
+            "mission_id": mission_state["mission_id"],
+            "time_step": 3,
+            "events": {
+                "water_drop": 18,
+                "yield_variation": -20,
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["mission_state"]["mission_id"] == mission_state["mission_id"]
+    assert data["mission_state"]["time"] == mission_state["time"] + 3
+    assert data["mission_state"]["resources"]["water"] < mission_state["resources"]["water"]
+    assert len(data["mission_state"]["history"]) >= 2
+    assert data["adaptation_summary"]
+    assert isinstance(data["system_changes"], list)
+    assert isinstance(data["risk_delta"], float)

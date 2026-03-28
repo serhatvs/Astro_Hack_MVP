@@ -5,10 +5,10 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.mission import router as mission_router
+from app.api.recommend import router as recommend_router
 from app.routes.demo_cases import router as demo_cases_router
 from app.routes.health import router as health_router
-from app.routes.recommend import router as recommend_router
-from app.routes.simulate import router as simulate_router
 
 
 def create_app() -> FastAPI:
@@ -44,13 +44,14 @@ def create_app() -> FastAPI:
                 "/demo-cases",
                 "/recommend",
                 "/simulate",
+                "/mission/step",
             ],
         }
 
     application.include_router(demo_cases_router)
     application.include_router(health_router)
     application.include_router(recommend_router)
-    application.include_router(simulate_router)
+    application.include_router(mission_router)
     return application
 
 

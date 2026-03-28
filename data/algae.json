@@ -1,0 +1,41 @@
+[
+  {
+    "name": "spirulina_loop",
+    "oxygen_contribution": 88,
+    "co2_utilization": 92,
+    "biomass_production": 90,
+    "protein_potential": 94,
+    "photobioreactor_compatibility": 82,
+    "water_system_compatibility": 84,
+    "energy_light_dependency": 68,
+    "maintenance_complexity": 62,
+    "preferred_environments": ["mars", "moon", "iss"],
+    "notes": "High-biomass cyanobacteria loop with strong oxygen and protein output, but elevated monitoring needs."
+  },
+  {
+    "name": "chlorella_panel",
+    "oxygen_contribution": 82,
+    "co2_utilization": 86,
+    "biomass_production": 78,
+    "protein_potential": 80,
+    "photobioreactor_compatibility": 88,
+    "water_system_compatibility": 76,
+    "energy_light_dependency": 58,
+    "maintenance_complexity": 48,
+    "preferred_environments": ["moon", "iss"],
+    "notes": "Stable algae panel with balanced oxygen support and manageable maintenance complexity."
+  },
+  {
+    "name": "scenedesmus_reserve",
+    "oxygen_contribution": 74,
+    "co2_utilization": 80,
+    "biomass_production": 72,
+    "protein_potential": 70,
+    "photobioreactor_compatibility": 76,
+    "water_system_compatibility": 90,
+    "energy_light_dependency": 46,
+    "maintenance_complexity": 38,
+    "preferred_environments": ["moon", "iss"],
+    "notes": "Lower-complexity reserve algae line optimized for water coupling and operational steadiness."
+  }
+]

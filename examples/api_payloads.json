@@ -1,0 +1,35 @@
+{
+  "recommend": {
+    "environment": "mars",
+    "duration": "long",
+    "constraints": {
+      "water": "medium",
+      "energy": "medium",
+      "area": "medium"
+    },
+    "goal": "balanced"
+  },
+  "mission_step": {
+    "mission_id": "replace_with_mission_id_from_recommend",
+    "time_step": 2,
+    "events": {
+      "water_drop": 12,
+      "contamination": 18,
+      "yield_variation": -15
+    }
+  },
+  "simulate": {
+    "mission_profile": {
+      "environment": "moon",
+      "duration": "medium",
+      "constraints": {
+        "water": "medium",
+        "energy": "medium",
+        "area": "medium"
+      },
+      "goal": "balanced"
+    },
+    "change_event": "yield_drop",
+    "affected_crop": "lettuce"
+  }
+}

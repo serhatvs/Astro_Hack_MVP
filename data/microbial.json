@@ -1,0 +1,38 @@
+[
+  {
+    "name": "nitrifying_bioreactor",
+    "waste_recycling_efficiency": 86,
+    "nutrient_conversion_capability": 92,
+    "loop_closure_contribution": 88,
+    "contamination_risk": 34,
+    "reactor_dependency": 62,
+    "environmental_sensitivity": 48,
+    "maintenance_burden": 44,
+    "preferred_environments": ["mars", "moon", "iss"],
+    "notes": "Strong nutrient reconversion pathway that supports stable fertilizer recovery with moderate reactor dependence."
+  },
+  {
+    "name": "anaerobic_digester",
+    "waste_recycling_efficiency": 90,
+    "nutrient_conversion_capability": 84,
+    "loop_closure_contribution": 86,
+    "contamination_risk": 46,
+    "reactor_dependency": 74,
+    "environmental_sensitivity": 58,
+    "maintenance_burden": 56,
+    "preferred_environments": ["mars", "moon"],
+    "notes": "High recycling throughput and loop value, but operational burden and contamination exposure are higher."
+  },
+  {
+    "name": "biofilm_polisher",
+    "waste_recycling_efficiency": 72,
+    "nutrient_conversion_capability": 78,
+    "loop_closure_contribution": 74,
+    "contamination_risk": 24,
+    "reactor_dependency": 40,
+    "environmental_sensitivity": 30,
+    "maintenance_burden": 28,
+    "preferred_environments": ["iss", "moon"],
+    "notes": "Low-burden microbial polishing loop that trades peak closure for simpler station operations."
+  }
+]

@@ -5,14 +5,38 @@ from __future__ import annotations
 from collections.abc import Mapping
 from functools import lru_cache
 
+from fastapi import HTTPException
+
+from app.core.mission_state import (
+    ActiveDomainItem,
+    ActiveSystemState,
+    MissionHistoryEntry,
+    MissionResources,
+    MissionState,
+    MissionStateStore,
+    SystemMetricsState,
+    constraint_to_resource_margin,
+)
 from app.core.risk import evaluate_risk
-from app.core.scoring import score_crops, score_systems
+from app.core.scoring import score_crops
+from app.core.simulation import MissionEvents, MissionStepRequest, advance_state_time, apply_resource_events
+from app.engine.crop_engine import ALGAE_LIKE_NAMES
+from app.engine.integration_engine import IntegrationEngine
+from app.llm.reasoning_loop import ReasoningLoop
 from app.models.demo_case import DemoCase
-from app.models.mission import ChangeEvent, MissionConstraints, MissionProfile, downgrade_constraint
+from app.models.mission import ChangeEvent, ConstraintLevel, MissionConstraints, MissionProfile, downgrade_constraint
 from app.models.response import (
     CropRecommendation,
+    DomainScoreBundle,
+    DomainScoreVector,
+    ExplanationBundle,
+    InteractionScoreBundle,
+    MissionStepResponse,
     RecommendationResponse,
     RiskDelta,
+    ScoreBundle,
+    SelectedDomainSystem,
+    SelectedSystemBundle,
     SimulationRequest,
     SimulationResponse,
 )
@@ -29,10 +53,16 @@ class RecommendationEngine:
         provider: DataProvider,
         explainer: Explainer | None = None,
         resource_planner: ResourcePlanner | None = None,
+        integration_engine: IntegrationEngine | None = None,
+        reasoning_loop: ReasoningLoop | None = None,
+        state_store: MissionStateStore | None = None,
     ) -> None:
         self.provider = provider
         self.explainer = explainer or Explainer()
         self.resource_planner = resource_planner or ResourcePlanner()
+        self.integration_engine = integration_engine or IntegrationEngine(provider)
+        self.reasoning_loop = reasoning_loop or ReasoningLoop(provider, integration_engine=self.integration_engine)
+        self.state_store = state_store or MissionStateStore()
 
     def list_demo_cases(self) -> list[DemoCase]:
         """Return named demo mission presets."""
@@ -45,17 +75,45 @@ class RecommendationEngine:
         temporary_penalties: Mapping[str, float] | None = None,
         weight_adjustments: Mapping[str, float] | None = None,
         status_penalty: bool = False,
+        existing_state: MissionState | None = None,
+        risk_bias: float = 1.0,
+        complexity_bias: float = 1.0,
+        loop_bias: float = 1.0,
+        persist_state: bool = True,
+        history_event: str = "initial_recommendation",
     ) -> RecommendationResponse:
-        crops = self.provider.get_crops()
-        systems = self.provider.get_systems()
+        mission_fit_bias = 0.03 if weight_adjustments else 0.0
 
-        ranked_systems = score_systems(systems, mission)
-        selected_system = ranked_systems[0].system
-
-        ranked_crops = score_crops(
-            crops=crops,
+        integrated_result, _domain_crops, selected_grow_system = self.integration_engine.select_configuration(
             mission=mission,
-            selected_system=selected_system,
+            temporary_penalties=dict(temporary_penalties or {}),
+            mission_fit_bias=mission_fit_bias,
+            risk_bias=risk_bias,
+            complexity_bias=complexity_bias,
+            loop_bias=loop_bias,
+        )
+        integrated_result, _domain_crops, selected_grow_system, llm_analysis = self.reasoning_loop.run(
+            mission=mission,
+            result=integrated_result,
+            top_crop_rankings=[],
+            grow_system=selected_grow_system,
+            temporary_penalties=dict(temporary_penalties or {}),
+            base_biases={
+                "risk_bias": risk_bias,
+                "complexity_bias": complexity_bias,
+                "loop_bias": loop_bias,
+            },
+        )
+
+        filtered_crops = [
+            crop
+            for crop in self.provider.get_crops()
+            if crop.name.lower() not in ALGAE_LIKE_NAMES
+        ]
+        ranked_crops = score_crops(
+            crops=filtered_crops,
+            mission=mission,
+            selected_system=selected_grow_system,
             temporary_penalties=temporary_penalties,
             weight_adjustments=weight_adjustments,
         )
@@ -68,41 +126,79 @@ class RecommendationEngine:
                 CropRecommendation(
                     name=item.crop.name,
                     score=round(item.score, 3),
-                    reason=self.explainer.build_crop_reason(item, mission, selected_system, strengths),
-                    selected_system=selected_system.name,
+                    reason=self.explainer.build_crop_reason(item, mission, selected_grow_system, strengths),
+                    selected_system=selected_grow_system.name,
                     strengths=strengths,
                     tradeoffs=self.explainer.build_crop_tradeoffs(item, mission),
                     metric_breakdown=self.explainer.build_metric_breakdown(item),
-                    compatibility_score=self.explainer.build_compatibility_score(item, mission, selected_system),
+                    compatibility_score=self.explainer.build_compatibility_score(item, mission, selected_grow_system),
                 )
             )
 
-        resource_plan = self.resource_planner.build_plan(top_ranked_crops, selected_system)
-        risk_analysis = evaluate_risk(mission, selected_system, top_ranked_crops)
-        system_reasoning = self.explainer.build_system_reasoning(mission, selected_system)
-        why_this_system = self.explainer.build_why_this_system(mission, selected_system)
+        resource_plan = self.resource_planner.build_plan(top_ranked_crops, selected_grow_system)
+        risk_analysis = evaluate_risk(mission, selected_grow_system, top_ranked_crops)
+
+        system_reasoning = self._build_integrated_system_reasoning(
+            mission=mission,
+            grow_system_name=selected_grow_system.name,
+            integrated_result=integrated_result,
+        )
+        why_this_system = self._build_why_this_system(
+            mission=mission,
+            grow_system_name=selected_grow_system.name,
+            integrated_result=integrated_result,
+        )
+        lead_crop_compatibility = crop_recommendations[0].compatibility_score if crop_recommendations else 0.5
         mission_status = self.explainer.build_mission_status(
             mission=mission,
             risk_analysis=risk_analysis,
-            selected_system=selected_system,
-            lead_crop_compatibility_score=crop_recommendations[0].compatibility_score,
+            selected_system=selected_grow_system,
+            lead_crop_compatibility_score=lead_crop_compatibility,
             penalty_on_previous_lead_crop=status_penalty,
         )
-        executive_summary = self.explainer.build_executive_summary(
+        executive_summary = self._build_executive_summary(
             mission=mission,
-            top_crop_recommendation=crop_recommendations[0],
-            selected_system=selected_system,
+            integrated_result=integrated_result,
+            grow_system_name=selected_grow_system.name,
             mission_status=mission_status,
-            risk_analysis=risk_analysis,
         )
-        operational_note = self.explainer.build_operational_note(risk_analysis, selected_system)
-        tradeoff_summary = self.explainer.build_tradeoff_summary(selected_system, crop_recommendations[0])
-        explanation = self.explainer.build_explanation(executive_summary, operational_note)
+        operational_note = self._build_operational_note(
+            risk_analysis=risk_analysis,
+            integrated_result=integrated_result,
+            llm_analysis=llm_analysis,
+        )
+        tradeoff_summary = self._build_tradeoff_summary(
+            integrated_result=integrated_result,
+            grow_system_name=selected_grow_system.name,
+        )
+        weak_points = self._build_weak_points(llm_analysis, risk_analysis)
+        explanation = f"{executive_summary} {operational_note}"
+
+        mission_state = self._build_mission_state(
+            mission=mission,
+            integrated_result=integrated_result,
+            risk_score=risk_analysis.score,
+            existing_state=existing_state,
+            summary=executive_summary,
+            history_event=history_event,
+        )
+        if persist_state:
+            self.state_store.save(mission_state)
 
         return RecommendationResponse(
             mission_profile=mission,
+            mission_state=mission_state,
+            selected_system=self._build_selected_system(integrated_result),
+            scores=self._build_scores(integrated_result),
+            explanations=ExplanationBundle(
+                executive_summary=executive_summary,
+                system_reasoning=system_reasoning,
+                tradeoffs=tradeoff_summary,
+                weak_points=weak_points,
+            ),
+            llm_analysis=llm_analysis,
             top_crops=crop_recommendations,
-            recommended_system=selected_system.name,
+            recommended_system=selected_grow_system.name,
             system_reason=system_reasoning,
             system_reasoning=system_reasoning,
             why_this_system=why_this_system,
@@ -120,6 +216,9 @@ class RecommendationEngine:
         updated_mission = request.mission_profile
         temporary_penalties: dict[str, float] | None = None
         weight_adjustments: dict[str, float] | None = None
+        risk_bias = 1.0
+        complexity_bias = 1.0
+        loop_bias = 1.0
         penalty_applied = False
         penalty_on_previous_lead = False
 
@@ -133,7 +232,7 @@ class RecommendationEngine:
                 request.mission_profile,
                 energy=downgrade_constraint(request.mission_profile.constraints.energy),
             )
-        elif request.change_event is ChangeEvent.YIELD_DROP:
+        elif request.change_event in {ChangeEvent.YIELD_DROP, ChangeEvent.YIELD_VARIATION}:
             crop_lookup = {crop.name.lower() for crop in self.provider.get_crops()}
             if request.affected_crop and request.affected_crop.lower() in crop_lookup:
                 affected_crop = request.affected_crop.lower()
@@ -145,12 +244,20 @@ class RecommendationEngine:
                 )
             else:
                 weight_adjustments = {"growth_time": 0.08, "risk": 0.08, "closed_loop": 0.05}
+                risk_bias = 1.08
+        elif request.change_event is ChangeEvent.CONTAMINATION:
+            risk_bias = 1.18
+            complexity_bias = 1.10
 
         updated_recommendation = self.recommend(
             updated_mission,
             temporary_penalties=temporary_penalties,
             weight_adjustments=weight_adjustments,
             status_penalty=penalty_on_previous_lead,
+            risk_bias=risk_bias,
+            complexity_bias=complexity_bias,
+            loop_bias=loop_bias,
+            history_event=f"simulate_{request.change_event.value}",
         )
 
         previous_top_crop = baseline_recommendation.top_crops[0].name if baseline_recommendation.top_crops else None
@@ -202,6 +309,381 @@ class RecommendationEngine:
             adaptation_summary=adaptation_summary,
             reason=adaptation_summary,
             adaptation_reason=adaptation_summary,
+        )
+
+    def mission_step(self, request: MissionStepRequest) -> MissionStepResponse:
+        state = self.state_store.get(request.mission_id)
+        if state is None:
+            raise HTTPException(status_code=404, detail=f"Mission '{request.mission_id}' was not found.")
+
+        previous_state = state.model_copy(deep=True)
+        updated_state = advance_state_time(state, request.time_step)
+        updated_resources = apply_resource_events(updated_state.resources, request.events)
+        updated_constraints = MissionConstraints(
+            water=self._margin_to_constraint(updated_resources.water),
+            energy=self._margin_to_constraint(updated_resources.energy),
+            area=self._margin_to_constraint(updated_resources.area),
+        )
+        updated_state = updated_state.model_copy(
+            update={"resources": updated_resources, "constraints": updated_constraints},
+            deep=True,
+        )
+        mission = MissionProfile(
+            environment=updated_state.environment,
+            duration=updated_state.duration,
+            constraints=updated_constraints,
+            goal=updated_state.goal,
+        )
+        event_adjustments = self._derive_event_adjustments(previous_state, request.events)
+
+        response = self.recommend(
+            mission=mission,
+            temporary_penalties=event_adjustments["temporary_penalties"],
+            status_penalty=event_adjustments["status_penalty"],
+            existing_state=updated_state,
+            risk_bias=event_adjustments["risk_bias"],
+            complexity_bias=event_adjustments["complexity_bias"],
+            loop_bias=event_adjustments["loop_bias"],
+            history_event=self._build_step_event_label(request.events),
+        )
+
+        system_changes = self._build_system_changes(previous_state, response.mission_state)
+        risk_delta = round(
+            response.mission_state.system_metrics.risk_level - previous_state.system_metrics.risk_level,
+            3,
+        )
+        adaptation_summary = self._build_mission_step_summary(
+            previous_state=previous_state,
+            updated_state=response.mission_state,
+            events=request.events,
+            system_changes=system_changes,
+            risk_delta=risk_delta,
+        )
+
+        return MissionStepResponse(
+            mission_state=response.mission_state,
+            selected_system=response.selected_system,
+            scores=response.scores,
+            explanations=response.explanations,
+            llm_analysis=response.llm_analysis,
+            system_changes=system_changes,
+            risk_delta=risk_delta,
+            adaptation_summary=adaptation_summary,
+            events=request.events,
+            request=request,
+        )
+
+    def _build_selected_system(self, integrated_result) -> SelectedSystemBundle:
+        return SelectedSystemBundle(
+            crop=SelectedDomainSystem(
+                name=integrated_result.crop.candidate.name,
+                type="crop",
+                domain_score=integrated_result.crop.domain_score,
+                mission_fit_score=integrated_result.crop.mission_fit_score,
+                risk_score=integrated_result.crop.risk_score,
+                support_system=integrated_result.grow_system_name,
+                metrics=integrated_result.crop.metrics,
+                notes=integrated_result.crop.notes,
+            ),
+            algae=SelectedDomainSystem(
+                name=integrated_result.algae.candidate.name,
+                type="algae",
+                domain_score=integrated_result.algae.domain_score,
+                mission_fit_score=integrated_result.algae.mission_fit_score,
+                risk_score=integrated_result.algae.risk_score,
+                metrics=integrated_result.algae.metrics,
+                notes=integrated_result.algae.notes,
+            ),
+            microbial=SelectedDomainSystem(
+                name=integrated_result.microbial.candidate.name,
+                type="microbial",
+                domain_score=integrated_result.microbial.domain_score,
+                mission_fit_score=integrated_result.microbial.mission_fit_score,
+                risk_score=integrated_result.microbial.risk_score,
+                metrics=integrated_result.microbial.metrics,
+                notes=integrated_result.microbial.notes,
+            ),
+        )
+
+    def _build_scores(self, integrated_result) -> ScoreBundle:
+        return ScoreBundle(
+            domain=DomainScoreBundle(
+                crop=DomainScoreVector(
+                    domain_score=integrated_result.crop.domain_score,
+                    mission_fit_score=integrated_result.crop.mission_fit_score,
+                    risk_score=integrated_result.crop.risk_score,
+                ),
+                algae=DomainScoreVector(
+                    domain_score=integrated_result.algae.domain_score,
+                    mission_fit_score=integrated_result.algae.mission_fit_score,
+                    risk_score=integrated_result.algae.risk_score,
+                ),
+                microbial=DomainScoreVector(
+                    domain_score=integrated_result.microbial.domain_score,
+                    mission_fit_score=integrated_result.microbial.mission_fit_score,
+                    risk_score=integrated_result.microbial.risk_score,
+                ),
+            ),
+            interaction=InteractionScoreBundle(
+                synergy_score=integrated_result.interaction.synergy_score,
+                conflict_score=integrated_result.interaction.conflict_score,
+                complexity_penalty=integrated_result.interaction.complexity_penalty,
+                resource_overlap=integrated_result.interaction.resource_overlap,
+                loop_closure_bonus=integrated_result.interaction.loop_closure_bonus,
+            ),
+            integrated=round(integrated_result.integrated_score, 3),
+        )
+
+    def _build_mission_state(
+        self,
+        mission: MissionProfile,
+        integrated_result,
+        risk_score: float,
+        existing_state: MissionState | None,
+        summary: str,
+        history_event: str,
+    ) -> MissionState:
+        resources = (
+            existing_state.resources.model_copy(deep=True)
+            if existing_state is not None
+            else self._resources_from_constraints(mission.constraints)
+        )
+        history = list(existing_state.history) if existing_state is not None else []
+        mission_id = existing_state.mission_id if existing_state is not None else self.state_store.new_id()
+        time = existing_state.time if existing_state is not None else 0
+        system_metrics = self._build_system_metrics(integrated_result, risk_score)
+
+        history.append(
+            MissionHistoryEntry(
+                time=time,
+                event=history_event,
+                summary=summary,
+                selected_crop=integrated_result.crop.candidate.name,
+                selected_algae=integrated_result.algae.candidate.name,
+                selected_microbial=integrated_result.microbial.candidate.name,
+                risk_level=system_metrics.risk_level,
+            )
+        )
+
+        return MissionState(
+            mission_id=mission_id,
+            environment=mission.environment,
+            duration=mission.duration,
+            goal=mission.goal,
+            constraints=mission.constraints,
+            time=time,
+            resources=resources,
+            active_system=ActiveSystemState(
+                crops=[
+                    ActiveDomainItem(
+                        name=integrated_result.crop.candidate.name,
+                        type="crop",
+                        score=integrated_result.crop.combined_score,
+                        support_system=integrated_result.grow_system_name,
+                    )
+                ],
+                algae=[
+                    ActiveDomainItem(
+                        name=integrated_result.algae.candidate.name,
+                        type="algae",
+                        score=integrated_result.algae.combined_score,
+                    )
+                ],
+                microbial=[
+                    ActiveDomainItem(
+                        name=integrated_result.microbial.candidate.name,
+                        type="microbial",
+                        score=integrated_result.microbial.combined_score,
+                    )
+                ],
+            ),
+            system_metrics=system_metrics,
+            history=history,
+        )
+
+    def _build_system_metrics(self, integrated_result, risk_score: float) -> SystemMetricsState:
+        crop = integrated_result.crop.candidate
+        algae = integrated_result.algae.candidate
+        microbial = integrated_result.microbial.candidate
+        oxygen_level = min(100.0, (0.45 * crop.oxygen_contribution) + (0.55 * algae.oxygen_contribution))
+        co2_balance = min(100.0, (0.35 * crop.co2_utilization) + (0.45 * algae.co2_utilization) + (0.20 * microbial.loop_closure_contribution))
+        food_supply = min(100.0, (0.45 * crop.calorie_yield) + (0.25 * crop.nutrient_density) + (0.30 * algae.protein_potential))
+        nutrient_cycle_efficiency = min(
+            100.0,
+            (0.30 * crop.waste_recycling_synergy)
+            + (0.40 * microbial.nutrient_conversion_capability)
+            + (0.30 * microbial.loop_closure_contribution),
+        )
+        return SystemMetricsState(
+            oxygen_level=round(oxygen_level, 2),
+            co2_balance=round(co2_balance, 2),
+            food_supply=round(food_supply, 2),
+            nutrient_cycle_efficiency=round(nutrient_cycle_efficiency, 2),
+            risk_level=round(risk_score * 100, 2),
+        )
+
+    def _build_integrated_system_reasoning(self, mission: MissionProfile, grow_system_name: str, integrated_result) -> str:
+        environment_label = self.explainer.format_environment(mission.environment)
+        crop_name = integrated_result.crop.candidate.name.title()
+        algae_name = integrated_result.algae.candidate.name.replace("_", " ").title()
+        microbial_name = integrated_result.microbial.candidate.name.replace("_", " ").title()
+        return (
+            f"{grow_system_name.title()} anchors the plant layer for this {environment_label} mission, with {crop_name} "
+            f"driving edible production, {algae_name} stabilizing oxygen and biomass support, and {microbial_name} "
+            "closing nutrient and waste-recovery loops."
+        )
+
+    def _build_why_this_system(self, mission: MissionProfile, grow_system_name: str, integrated_result) -> str:
+        return (
+            f"{grow_system_name.title()} is the best fit because {integrated_result.crop.candidate.name.title()} fits the food objective, "
+            f"{integrated_result.algae.candidate.name.replace('_', ' ').title()} improves atmospheric support, "
+            f"and {integrated_result.microbial.candidate.name.replace('_', ' ').title()} improves loop closure while "
+            "the integrated stack stays mission-compatible."
+        )
+
+    def _build_executive_summary(
+        self,
+        mission: MissionProfile,
+        integrated_result,
+        grow_system_name: str,
+        mission_status,
+    ) -> str:
+        environment_label = self.explainer.format_environment(mission.environment)
+        return (
+            f"{environment_label} mission status is {mission_status.value}: {integrated_result.crop.candidate.name.title()} "
+            f"leads food production under a {grow_system_name.title()} plant layer, while "
+            f"{integrated_result.algae.candidate.name.replace('_', ' ').title()} and "
+            f"{integrated_result.microbial.candidate.name.replace('_', ' ').title()} strengthen atmospheric and recycling support."
+        )
+
+    def _build_operational_note(self, risk_analysis, integrated_result, llm_analysis) -> str:
+        if llm_analysis.weaknesses and "contamination" in llm_analysis.weaknesses[0].lower():
+            return "Monitor microbial containment boundaries closely and preserve sanitation margin before scaling throughput."
+        if risk_analysis.factors and "water" in risk_analysis.factors[0].lower():
+            return "Protect water recovery throughput and verify that algae and crop loops remain coupled within expected margins."
+        if integrated_result.interaction.complexity_penalty >= 0.58:
+            return "Crew workload is becoming a visible constraint, so maintenance batching and subsystem simplification should be prioritized."
+        return "Maintain the current loop configuration, log state changes, and monitor oxygen, nutrient, and contamination margins together."
+
+    def _build_tradeoff_summary(self, integrated_result, grow_system_name: str) -> str:
+        return (
+            f"{grow_system_name.title()} and {integrated_result.algae.candidate.name.replace('_', ' ').title()} preserve loop performance, "
+            f"but the main tradeoff is higher integrated complexity while "
+            f"{integrated_result.microbial.candidate.name.replace('_', ' ').title()} remains the primary contamination watch item."
+        )
+
+    def _build_weak_points(self, llm_analysis, risk_analysis) -> str:
+        if llm_analysis.weaknesses:
+            return " ".join(llm_analysis.weaknesses[:2])
+        if risk_analysis.factors:
+            return "; ".join(risk_analysis.factors[:2])
+        return "No dominant weak point was flagged."
+
+    def _resources_from_constraints(self, constraints: MissionConstraints) -> MissionResources:
+        return MissionResources(
+            water=self._clamp_resource(constraint_to_resource_margin(constraints.water)),
+            energy=self._clamp_resource(constraint_to_resource_margin(constraints.energy)),
+            area=self._clamp_resource(constraint_to_resource_margin(constraints.area)),
+        )
+
+    def _clamp_resource(self, value: float) -> float:
+        return round(max(0.0, min(100.0, value)), 2)
+
+    def _margin_to_constraint(self, margin: float) -> ConstraintLevel:
+        if margin >= 70:
+            return ConstraintLevel.LOW
+        if margin >= 45:
+            return ConstraintLevel.MEDIUM
+        return ConstraintLevel.HIGH
+
+    def _derive_event_adjustments(
+        self,
+        state: MissionState,
+        events: MissionEvents | None,
+    ) -> dict[str, object]:
+        temporary_penalties: dict[str, float] | None = None
+        status_penalty = False
+        risk_bias = 1.0
+        complexity_bias = 1.0
+        loop_bias = 1.0
+
+        if events is None:
+            return {
+                "temporary_penalties": temporary_penalties,
+                "status_penalty": status_penalty,
+                "risk_bias": risk_bias,
+                "complexity_bias": complexity_bias,
+                "loop_bias": loop_bias,
+            }
+
+        if events.contamination is not None:
+            risk_bias += events.contamination / 120
+            complexity_bias += events.contamination / 240
+
+        if events.yield_variation is not None and events.yield_variation < 0 and state.active_system.crops:
+            crop_name = state.active_system.crops[0].name.lower()
+            temporary_penalties = {crop_name: min(abs(events.yield_variation) / 100, 0.45)}
+            status_penalty = True
+
+        if events.water_drop is not None and events.water_drop >= 12:
+            loop_bias += 0.05
+        if events.energy_drop is not None and events.energy_drop >= 12:
+            complexity_bias += 0.05
+
+        return {
+            "temporary_penalties": temporary_penalties,
+            "status_penalty": status_penalty,
+            "risk_bias": round(risk_bias, 3),
+            "complexity_bias": round(complexity_bias, 3),
+            "loop_bias": round(loop_bias, 3),
+        }
+
+    def _build_step_event_label(self, events: MissionEvents | None) -> str:
+        if events is None:
+            return "mission_step"
+        active_events = [name for name, value in events.model_dump().items() if value is not None]
+        return "mission_step:" + ",".join(active_events or ["none"])
+
+    def _build_system_changes(self, previous_state: MissionState, updated_state: MissionState) -> list[str]:
+        changes: list[str] = []
+        previous_crop = previous_state.active_system.crops[0].name if previous_state.active_system.crops else None
+        updated_crop = updated_state.active_system.crops[0].name if updated_state.active_system.crops else None
+        previous_algae = previous_state.active_system.algae[0].name if previous_state.active_system.algae else None
+        updated_algae = updated_state.active_system.algae[0].name if updated_state.active_system.algae else None
+        previous_microbial = previous_state.active_system.microbial[0].name if previous_state.active_system.microbial else None
+        updated_microbial = updated_state.active_system.microbial[0].name if updated_state.active_system.microbial else None
+        previous_grow_system = previous_state.active_system.crops[0].support_system if previous_state.active_system.crops else None
+        updated_grow_system = updated_state.active_system.crops[0].support_system if updated_state.active_system.crops else None
+
+        if previous_crop != updated_crop:
+            changes.append(f"crop:{previous_crop}->{updated_crop}")
+        if previous_algae != updated_algae:
+            changes.append(f"algae:{previous_algae}->{updated_algae}")
+        if previous_microbial != updated_microbial:
+            changes.append(f"microbial:{previous_microbial}->{updated_microbial}")
+        if previous_grow_system != updated_grow_system:
+            changes.append(f"grow_system:{previous_grow_system}->{updated_grow_system}")
+        return changes
+
+    def _build_mission_step_summary(
+        self,
+        previous_state: MissionState,
+        updated_state: MissionState,
+        events: MissionEvents | None,
+        system_changes: list[str],
+        risk_delta: float,
+    ) -> str:
+        event_list = ", ".join(
+            name for name, value in (events.model_dump().items() if events else []) if value is not None
+        ) or "no major events"
+        if system_changes:
+            return (
+                f"Mission step processed {event_list}; the integrated system changed configuration "
+                f"({'; '.join(system_changes)}) and risk moved by {risk_delta:+.3f}."
+            )
+        return (
+            f"Mission step processed {event_list}; the biological loop held its configuration while risk moved by "
+            f"{risk_delta:+.3f} from {previous_state.system_metrics.risk_level:.2f} to {updated_state.system_metrics.risk_level:.2f}."
         )
 
     def _compute_ranking_diff(
