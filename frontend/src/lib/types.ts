@@ -96,6 +96,13 @@ export interface MissionStateActiveItem {
   support_system?: string | null;
 }
 
+export interface WaterRecoveryEntry {
+  week_used: number;
+  amount_used: number;
+  cycle_weeks: number;
+  recovery_rate: number;
+}
+
 export interface MissionState {
   mission_id: string;
   environment: Environment;
@@ -107,6 +114,11 @@ export interface MissionState {
   initial_risk_level: number;
   end_reason?: string | null;
   resources: MissionStateResourceSet;
+  water_recovery_queue: WaterRecoveryEntry[];
+  last_consumed_water: number;
+  last_recovered_water: number;
+  water_recovery_cycle_weeks: number;
+  water_recovery_rate: number;
   active_system: {
     crops: MissionStateActiveItem[];
     algae: MissionStateActiveItem[];

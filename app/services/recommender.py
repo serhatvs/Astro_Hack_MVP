@@ -16,6 +16,7 @@ from app.core.mission_state import (
     MissionState,
     MissionStateStore,
     SystemMetricsState,
+    WaterRecoveryEntry,
     constraint_to_resource_margin,
 )
 from app.core.risk import evaluate_risk
@@ -23,7 +24,6 @@ from app.core.scoring import score_crops
 from app.core.simulation import (
     MissionEvents,
     MissionStepRequest,
-    advance_state_time,
     apply_resource_events,
     max_weeks_for_duration,
 )
@@ -403,9 +403,8 @@ class RecommendationEngine:
             raise HTTPException(status_code=404, detail=f"Mission '{request.mission_id}' was not found.")
 
         previous_state = state.model_copy(deep=True)
-        updated_state = advance_state_time(state, request.time_step)
-        weekly_resources = self._apply_weekly_resource_usage(updated_state, request.time_step)
-        updated_resources = apply_resource_events(weekly_resources, request.events)
+        updated_state = self._apply_weekly_resource_flow(state, request.time_step, request.events)
+        updated_resources = updated_state.resources.model_copy(deep=True)
         updated_constraints = MissionConstraints(
             water=self._margin_to_constraint(updated_resources.water),
             energy=self._margin_to_constraint(updated_resources.energy),
@@ -1027,12 +1026,26 @@ class RecommendationEngine:
         time = existing_state.time if existing_state is not None else 0
         system_metrics = self._build_system_metrics(integrated_result, risk_score)
         max_weeks = existing_state.max_weeks if existing_state is not None else max_weeks_for_duration(mission.duration)
+        cycle_weeks, recovery_rate = self._build_water_recovery_profile(
+            integrated_result.crop.candidate,
+            integrated_result.algae.candidate,
+            integrated_result.microbial.candidate,
+        )
         initial_risk_level = (
             existing_state.initial_risk_level
             if existing_state is not None
             else system_metrics.risk_level
         )
         end_reason = existing_state.end_reason if existing_state is not None else None
+        water_recovery_queue = (
+            [entry.model_copy(deep=True) for entry in existing_state.water_recovery_queue]
+            if existing_state is not None
+            else []
+        )
+        last_consumed_water = existing_state.last_consumed_water if existing_state is not None else 0.0
+        last_recovered_water = existing_state.last_recovered_water if existing_state is not None else 0.0
+        water_recovery_cycle_weeks = cycle_weeks
+        water_recovery_rate = recovery_rate
 
         history.append(
             MissionHistoryEntry(
@@ -1057,6 +1070,11 @@ class RecommendationEngine:
             initial_risk_level=initial_risk_level,
             end_reason=end_reason,
             resources=resources,
+            water_recovery_queue=water_recovery_queue,
+            last_consumed_water=last_consumed_water,
+            last_recovered_water=last_recovered_water,
+            water_recovery_cycle_weeks=water_recovery_cycle_weeks,
+            water_recovery_rate=water_recovery_rate,
             active_system=ActiveSystemState(
                 crops=[
                     ActiveDomainItem(
@@ -1190,7 +1208,35 @@ class RecommendationEngine:
         microbial = next((item for item in self.provider.get_microbial_systems() if item.name == microbial_name), None)
         return crop, algae, microbial
 
-    def _apply_weekly_resource_usage(self, state: MissionState, weeks: int) -> MissionResources:
+    def _build_water_recovery_profile(
+        self,
+        crop,
+        algae,
+        microbial,
+    ) -> tuple[int, float]:
+        crop_cycle = 8
+        if crop is not None:
+            crop_cycle = round(max(4, min(16, 4 + ((crop.growth_time / 100) * 12))))
+
+        recovery_rate = 0.34
+        if crop is not None:
+            recovery_rate += crop.waste_recycling_synergy / 700
+        if algae is not None:
+            recovery_rate += algae.water_system_compatibility / 900
+            recovery_rate += algae.oxygen_contribution / 2200
+            recovery_rate -= algae.energy_light_dependency / 2600
+        if microbial is not None:
+            recovery_rate += microbial.waste_recycling_efficiency / 1000
+            recovery_rate += microbial.nutrient_conversion_capability / 1500
+            recovery_rate -= microbial.contamination_risk / 3000
+
+        return crop_cycle, round(max(0.45, min(0.72, recovery_rate)), 3)
+
+    def _compute_weekly_resource_demand(
+        self,
+        state: MissionState,
+        weeks: int = 1,
+    ) -> tuple[float, float, float]:
         crop, algae, microbial = self._resolve_active_candidates(state)
 
         crop_water = (0.8 + ((crop.water_need / 55) if crop else 0.9)) * weeks
@@ -1207,12 +1253,75 @@ class RecommendationEngine:
         water_use = max(0.8 * weeks, crop_water + algae_water + (0.25 * weeks) - microbial_water_offset)
         energy_use = max(0.8 * weeks, crop_energy + algae_energy + microbial_energy + (0.3 * weeks))
         area_use = max(0.25 * weeks, crop_area + microbial_area)
+        return round(water_use, 2), round(energy_use, 2), round(area_use, 2)
 
-        return MissionResources(
-            water=self._clamp_resource(state.resources.water - water_use),
-            energy=self._clamp_resource(state.resources.energy - energy_use),
-            area=self._clamp_resource(state.resources.area - area_use),
-        )
+    def _apply_weekly_resource_flow(
+        self,
+        state: MissionState,
+        weeks: int,
+        events: MissionEvents | None,
+    ) -> MissionState:
+        current_state = state.model_copy(deep=True)
+        resources = current_state.resources.model_copy(deep=True)
+        queue = [entry.model_copy(deep=True) for entry in current_state.water_recovery_queue]
+        total_consumed_water = 0.0
+        total_recovered_water = 0.0
+
+        for week_index in range(weeks):
+            crop, algae, microbial = self._resolve_active_candidates(current_state)
+            cycle_weeks, recovery_rate = self._build_water_recovery_profile(crop, algae, microbial)
+            water_use, energy_use, area_use = self._compute_weekly_resource_demand(current_state, 1)
+
+            resources = MissionResources(
+                water=self._clamp_resource(resources.water - water_use),
+                energy=self._clamp_resource(resources.energy - energy_use),
+                area=self._clamp_resource(resources.area - area_use),
+            )
+
+            current_week = current_state.time + 1
+            queue.append(
+                WaterRecoveryEntry(
+                    week_used=current_week,
+                    amount_used=water_use,
+                    cycle_weeks=cycle_weeks,
+                    recovery_rate=recovery_rate,
+                )
+            )
+
+            recovered_this_week = 0.0
+            pending_queue: list[WaterRecoveryEntry] = []
+            for entry in queue:
+                if current_week >= entry.week_used + entry.cycle_weeks:
+                    recovered_this_week += entry.amount_used * entry.recovery_rate
+                else:
+                    pending_queue.append(entry)
+            queue = pending_queue
+
+            if recovered_this_week > 0:
+                resources = resources.model_copy(
+                    update={"water": self._clamp_resource(resources.water + recovered_this_week)},
+                    deep=True,
+                )
+
+            if week_index == weeks - 1:
+                resources = apply_resource_events(resources, events)
+
+            total_consumed_water += water_use
+            total_recovered_water += recovered_this_week
+            current_state = current_state.model_copy(
+                update={
+                    "time": current_week,
+                    "resources": resources,
+                    "water_recovery_queue": queue,
+                    "last_consumed_water": round(total_consumed_water, 2),
+                    "last_recovered_water": round(total_recovered_water, 2),
+                    "water_recovery_cycle_weeks": cycle_weeks,
+                    "water_recovery_rate": recovery_rate,
+                },
+                deep=True,
+            )
+
+        return current_state
 
     def _derive_weekly_adjustments(
         self,
@@ -1521,6 +1630,11 @@ class RecommendationEngine:
                 elif events.yield_variation > 0:
                     fragments.append("Yield variation improved crop output")
 
+        if updated_state.last_recovered_water >= 0.25:
+            fragments.append(
+                f"Water recovery returned {updated_state.last_recovered_water:.1f}% to the loop"
+            )
+
         if not fragments:
             water_delta = previous_state.resources.water - updated_state.resources.water
             energy_delta = previous_state.resources.energy - updated_state.resources.energy
@@ -1564,6 +1678,8 @@ class RecommendationEngine:
         updated_state: MissionState,
     ) -> str:
         crop, algae, microbial = self._resolve_active_candidates(updated_state)
+        if updated_state.last_recovered_water >= 0.5 and microbial is not None:
+            return f"{microbial.name.title()} helped close the water recovery loop"
         if crop is not None and updated_state.resources.water <= updated_state.resources.energy:
             return f"{crop.name.title()} set the heaviest weekly resource demand"
         if algae is not None and algae.oxygen_contribution >= 70:

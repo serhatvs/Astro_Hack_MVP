@@ -357,6 +357,10 @@ const Simulation = () => {
     session.ui_enhanced?.adaptation_summary ||
     "Simulation initialized with the selected biological stack. Apply mission events to see how the loop responds.";
   const maxWeeks = missionState.max_weeks ?? durationWeekTargets[missionState.duration];
+  const recoveredWater = missionState.last_recovered_water ?? 0;
+  const recoveryQueueSize = missionState.water_recovery_queue?.length ?? 0;
+  const recoveryCycleWeeks = missionState.water_recovery_cycle_weeks ?? 0;
+  const recoveryRate = missionState.water_recovery_rate ?? 0;
   const currentRisk = missionState.system_metrics.risk_level;
   const initialRisk = missionState.initial_risk_level ?? currentRisk;
   const previousRisk =
@@ -1098,6 +1102,13 @@ const Simulation = () => {
                 {formatDeltaArrow(missionState.resources.water - previousSession.mission_state.resources.water).arrow}
               </p>
             )}
+            <p className="text-xs font-mono text-neon-cyan">
+              Recovered Water: {recoveredWater.toFixed(2)}%
+            </p>
+            <p className="text-[10px] font-mono text-muted-foreground">
+              Queue: {recoveryQueueSize} batch(es) | Cycle: {recoveryCycleWeeks} week(s) | Rate:{" "}
+              {Math.round(recoveryRate * 100)}%
+            </p>
           </div>
           <div className="glass-panel flex min-h-[120px] min-w-0 flex-col gap-2 overflow-hidden p-3">
             <div className="flex items-center gap-2">

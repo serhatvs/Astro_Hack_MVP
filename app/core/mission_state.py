@@ -53,6 +53,17 @@ class SystemMetricsState(BaseModel):
     risk_level: float = Field(ge=0, le=100)
 
 
+class WaterRecoveryEntry(BaseModel):
+    """Single water batch waiting in the delayed recovery loop."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    week_used: int = Field(ge=0)
+    amount_used: float = Field(ge=0, le=100)
+    cycle_weeks: int = Field(ge=1)
+    recovery_rate: float = Field(ge=0, le=1)
+
+
 class MissionHistoryEntry(BaseModel):
     """Single state transition record."""
 
@@ -82,6 +93,11 @@ class MissionState(BaseModel):
     initial_risk_level: float = Field(default=0, ge=0, le=100)
     end_reason: str | None = None
     resources: MissionResources
+    water_recovery_queue: list[WaterRecoveryEntry] = Field(default_factory=list)
+    last_consumed_water: float = Field(default=0, ge=0)
+    last_recovered_water: float = Field(default=0, ge=0)
+    water_recovery_cycle_weeks: int = Field(default=0, ge=0)
+    water_recovery_rate: float = Field(default=0, ge=0, le=1)
     active_system: ActiveSystemState
     system_metrics: SystemMetricsState
     history: list[MissionHistoryEntry] = Field(default_factory=list)

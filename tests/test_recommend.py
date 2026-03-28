@@ -304,6 +304,125 @@ def test_simulation_duration_maps_to_weekly_horizon(monkeypatch) -> None:
         assert data["mission_state"]["max_weeks"] == expected_weeks
 
 
+def test_simulation_start_initializes_water_recovery_profile(monkeypatch) -> None:
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+    response = client.post(
+        "/simulation/start",
+        json={
+            "mission_profile": {
+                "environment": "moon",
+                "duration": "medium",
+                "constraints": {
+                    "water": "medium",
+                    "energy": "medium",
+                    "area": "medium",
+                },
+                "goal": "balanced",
+            },
+            "selected_crop": "Lactuca sativa (Marul)",
+            "selected_algae": "Chlorella vulgaris",
+            "selected_microbial": "Saccharomyces boulardii",
+        },
+    )
+
+    assert response.status_code == 200
+    state = response.json()["mission_state"]
+    assert state["water_recovery_queue"] == []
+    assert state["water_recovery_cycle_weeks"] >= 4
+    assert 0.45 <= state["water_recovery_rate"] <= 0.72
+    assert state["last_recovered_water"] == 0
+
+
+def test_water_recovery_returns_after_cycle_delay(monkeypatch) -> None:
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+    bootstrap = client.post(
+        "/simulation/start",
+        json={
+            "mission_profile": {
+                "environment": "moon",
+                "duration": "medium",
+                "constraints": {
+                    "water": "medium",
+                    "energy": "medium",
+                    "area": "medium",
+                },
+                "goal": "balanced",
+            },
+            "selected_crop": "Lactuca sativa (Marul)",
+            "selected_algae": "Chlorella vulgaris",
+            "selected_microbial": "Saccharomyces boulardii",
+        },
+    )
+    assert bootstrap.status_code == 200
+    bootstrap_data = bootstrap.json()
+    mission_id = bootstrap_data["mission_state"]["mission_id"]
+
+    cycle_weeks = bootstrap_data["mission_state"]["water_recovery_cycle_weeks"]
+    latest = None
+    for _ in range(cycle_weeks + 1):
+        response = client.post(
+            "/mission/step",
+            json={
+                "mission_id": mission_id,
+                "time_step": 1,
+            },
+        )
+        assert response.status_code == 200
+        latest = response.json()
+
+    assert latest is not None
+    assert latest["mission_state"]["last_consumed_water"] > 0
+    assert latest["mission_state"]["last_recovered_water"] > 0
+    assert latest["adaptation_summary"].lower().count("water recovery") >= 1
+
+
+def test_stronger_stack_recovers_water_more_efficiently_than_weaker_stack(monkeypatch) -> None:
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+    strong = client.post(
+        "/simulation/start",
+        json={
+            "mission_profile": {
+                "environment": "moon",
+                "duration": "medium",
+                "constraints": {
+                    "water": "low",
+                    "energy": "low",
+                    "area": "low",
+                },
+                "goal": "balanced",
+            },
+            "selected_crop": "Lactuca sativa (Marul)",
+            "selected_algae": "Chlorella vulgaris",
+            "selected_microbial": "Saccharomyces boulardii",
+        },
+    )
+    weak = client.post(
+        "/simulation/start",
+        json={
+            "mission_profile": {
+                "environment": "moon",
+                "duration": "medium",
+                "constraints": {
+                    "water": "low",
+                    "energy": "low",
+                    "area": "low",
+                },
+                "goal": "balanced",
+            },
+            "selected_crop": "Lactuca sativa (Marul)",
+            "selected_algae": "Dunaliella salina",
+            "selected_microbial": "Methylobacterium extorquens",
+        },
+    )
+
+    assert strong.status_code == 200
+    assert weak.status_code == 200
+    assert strong.json()["mission_state"]["water_recovery_rate"] > weak.json()["mission_state"]["water_recovery_rate"]
+
+
 def test_strong_low_constraint_system_survives_past_week_20_on_medium_and_long_horizons(monkeypatch) -> None:
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
 

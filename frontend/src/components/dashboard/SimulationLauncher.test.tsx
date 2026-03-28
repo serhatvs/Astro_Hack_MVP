@@ -34,6 +34,11 @@ const recommendation: RecommendationResponse = {
       energy: 62,
       area: 62,
     },
+    water_recovery_queue: [],
+    last_consumed_water: 0,
+    last_recovered_water: 0,
+    water_recovery_cycle_weeks: 6,
+    water_recovery_rate: 0.58,
     active_system: {
       crops: [],
       algae: [],

@@ -36,6 +36,11 @@ const session: SimulationStartResponse = {
       energy: 62,
       area: 62,
     },
+    water_recovery_queue: [],
+    last_consumed_water: 0,
+    last_recovered_water: 0,
+    water_recovery_cycle_weeks: 6,
+    water_recovery_rate: 0.58,
     active_system: {
       crops: [],
       algae: [],
@@ -165,6 +170,7 @@ describe("Simulation page", () => {
     expect(screen.getByText("Saccharomyces Boulardii")).toBeInTheDocument();
     expect(screen.getByText("Custom simulation executive summary")).toBeInTheDocument();
     expect(screen.getByText(/Current Week:/i)).toBeInTheDocument();
+    expect(screen.getByText(/Recovered Water:/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Next Week/i })).toBeInTheDocument();
   });
 
