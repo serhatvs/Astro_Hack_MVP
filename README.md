@@ -1,108 +1,133 @@
 # Adaptive Closed-Loop Space Agriculture AI
 
-Hackathon MVP that combines a FastAPI mission-planning engine with a React mission-control dashboard. The backend handles crop ranking, system selection, resource planning, risk analysis, and simulated adaptation. The frontend turns those results into a live demo UI.
+Integrated hackathon MVP for mission-aware space agriculture planning.
 
-## Project Layout
+- The FastAPI backend is the decision engine.
+- The React + Vite frontend in `frontend/` is the Terra Vision dashboard UI.
 
-```text
-C:\Users\VICTUS\ASTRO
-|- app
-|- data
-|- tests
-|- frontend
-|- requirements.txt
-`- README.md
-```
+## Overview
 
-## Backend Setup
+The backend evaluates mission environment, duration, resource constraints, and optimization goals to recommend:
 
-```powershell
-cd C:\Users\VICTUS\ASTRO
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-```
+- top 3 crop candidates
+- a primary growing system
+- a resource posture
+- mission agriculture risk
+- a deterministic explanation
 
-## Run The Demo
+The frontend consumes those APIs and presents the results in a mission-control dashboard with crisis simulation.
 
-Start the backend:
+## Architecture
 
-```powershell
-cd C:\Users\VICTUS\ASTRO
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-```
-
-Start the frontend in a second terminal:
-
-```powershell
-cd C:\Users\VICTUS\ASTRO\frontend
-npm install
-npm run dev
-```
-
-Open:
-
-- `http://localhost:5173`
-- `http://localhost:8000/docs`
-
-Optional frontend API override:
-
-```powershell
-$env:VITE_API_BASE_URL="http://localhost:8000"
-npm run dev
-```
-
-## API Endpoints
+Backend APIs:
 
 - `GET /health`
 - `GET /demo-cases`
 - `POST /recommend`
 - `POST /simulate`
 
-## Sample Requests
+Frontend:
+
+- reads mission input from the dashboard
+- calls the backend APIs
+- renders recommendations, reasoning, resources, risk, and adaptation updates
+
+## Project Structure
+
+```text
+.
+├── app/
+├── data/
+├── tests/
+├── frontend/
+├── requirements.txt
+└── README.md
+```
+
+## Setup
+
+Backend:
+
+```bash
+pip install -r requirements.txt
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+Frontend:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Frontend expects the backend at `http://localhost:8000`.
+
+## Demo Flow
+
+1. Open the frontend dashboard.
+2. Load a demo scenario or set mission inputs manually.
+3. Generate a recommendation.
+4. Simulate a crisis.
+5. Observe crop ranking, system, risk, and explanation updates.
+
+## API Summary
+
+- `GET /health` checks service availability.
+- `GET /demo-cases` returns preset mission scenarios.
+- `POST /recommend` returns the mission recommendation package.
+- `POST /simulate` returns the adapted recommendation after a crisis event.
+
+## Example Requests
 
 Recommend:
 
-```powershell
-curl.exe -X POST http://localhost:8000/recommend `
-  -H "Content-Type: application/json" `
-  -d "{\"environment\":\"mars\",\"duration\":\"long\",\"constraints\":{\"water\":\"low\",\"energy\":\"medium\",\"area\":\"medium\"},\"goal\":\"balanced\"}"
+```bash
+curl -X POST http://localhost:8000/recommend \
+  -H "Content-Type: application/json" \
+  -d '{
+    "environment": "mars",
+    "duration": "long",
+    "constraints": {
+      "water": "low",
+      "energy": "medium",
+      "area": "medium"
+    },
+    "goal": "balanced"
+  }'
 ```
 
 Simulate:
 
-```powershell
-curl.exe -X POST http://localhost:8000/simulate `
-  -H "Content-Type: application/json" `
-  -d "{\"mission_profile\":{\"environment\":\"mars\",\"duration\":\"long\",\"constraints\":{\"water\":\"low\",\"energy\":\"medium\",\"area\":\"medium\"},\"goal\":\"balanced\"},\"change_event\":\"water_drop\"}"
+```bash
+curl -X POST http://localhost:8000/simulate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "mission_profile": {
+      "environment": "mars",
+      "duration": "long",
+      "constraints": {
+        "water": "low",
+        "energy": "medium",
+        "area": "medium"
+      },
+      "goal": "balanced"
+    },
+    "change_event": "water_drop"
+  }'
 ```
 
-## Demo Flow
-
-1. Start the backend on port `8000`.
-2. Start the frontend on port `5173`.
-3. In the dashboard, select the mission profile and click `Generate Plan`.
-4. Trigger `Water`, `Energy`, or `Yield` crisis simulation to show the adaptive re-ranking.
-
-## Tests
+## Validation
 
 Backend tests:
 
-```powershell
-cd C:\Users\VICTUS\ASTRO
+```bash
 pytest
 ```
 
-Frontend build check:
+Frontend build:
 
-```powershell
-cd C:\Users\VICTUS\ASTRO\frontend
+```bash
+cd frontend
 npm run build
 ```
-
-## Notes
-
-- No external AI APIs are used.
-- Data is JSON-backed for hackathon speed.
-- The frontend consumes the real backend responses; no mock runtime data is used in the integrated demo flow.
