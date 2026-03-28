@@ -17,6 +17,8 @@ interface SimulationRouteState {
   session?: SimulationSession;
 }
 
+type SimulationStatusLabel = "running" | "complete" | "failure";
+
 const statusClass = (status: MissionStatus) => {
   if (status === "CRITICAL") {
     return "border-neon-red/40 bg-neon-red/15 text-neon-red";
@@ -25,6 +27,44 @@ const statusClass = (status: MissionStatus) => {
     return "border-neon-orange/40 bg-neon-orange/15 text-neon-orange";
   }
   return "border-neon-green/40 bg-neon-green/15 text-neon-green";
+};
+
+const durationTargets = {
+  short: 30,
+  medium: 180,
+  long: 365,
+} as const;
+
+const formatPercentish = (value?: number | null) => {
+  if (typeof value !== "number" || Number.isNaN(value)) {
+    return null;
+  }
+  const normalized = value <= 1 ? value * 100 : value;
+  return `${Math.round(normalized)}%`;
+};
+
+const formatDeltaArrow = (delta?: number | null) => {
+  if (typeof delta !== "number" || Number.isNaN(delta) || Math.abs(delta) < 0.01) {
+    return {
+      arrow: "→",
+      tone: "text-muted-foreground",
+      label: "Stable",
+    };
+  }
+
+  if (delta > 0) {
+    return {
+      arrow: "↑",
+      tone: "text-neon-red",
+      label: `+${delta.toFixed(2)}`,
+    };
+  }
+
+  return {
+    arrow: "↓",
+    tone: "text-neon-green",
+    label: delta.toFixed(2),
+  };
 };
 
 const parseOptionalNumber = (value: string): number | undefined => {
@@ -58,6 +98,104 @@ const parseSystemChange = (value: string) => {
   };
 };
 
+const buildEventFeedback = (events: MissionEventsPayload | null | undefined) => {
+  if (!events) {
+    return "No event applied yet.";
+  }
+
+  const active = Object.entries(events).filter(([, value]) => value !== null && value !== undefined);
+  if (active.length === 0) {
+    return "No event applied yet.";
+  }
+
+  const fragments = active.map(([key, value]) => {
+    const label = formatLabel(key);
+    if (typeof value === "number") {
+      return `${label} ${value}`;
+    }
+    return label;
+  });
+
+  return `${fragments.join(" | ")} applied`;
+};
+
+const buildImpactSnapshot = (
+  events: MissionEventsPayload | null | undefined,
+  riskDelta: number | null,
+  systemChanged: boolean,
+) => {
+  const fragments: string[] = [];
+
+  if (events?.water_drop !== undefined) {
+    fragments.push("Water drop increased resource pressure");
+  }
+  if (events?.energy_drop !== undefined) {
+    fragments.push("Energy drop increased power strain");
+  }
+  if (events?.contamination !== undefined) {
+    fragments.push("Contamination raised biological stress");
+  }
+  if (events?.yield_variation !== undefined && events.yield_variation < 0) {
+    fragments.push("Yield drop reduced crop output");
+  }
+
+  if (fragments.length === 0) {
+    return "The latest step preserved the current ecosystem conditions.";
+  }
+
+  const base = fragments.slice(0, 2).join(" and ");
+  const riskEffect =
+    riskDelta === null
+      ? "while risk remained under observation"
+      : riskDelta > 0.05
+        ? "and pushed risk upward"
+        : riskDelta < -0.05
+          ? "and reduced risk pressure"
+          : "while risk held near baseline";
+  const systemEffect = systemChanged ? " while forcing a stack adjustment" : "";
+
+  return `${base} ${riskEffect}${systemEffect}.`;
+};
+
+const buildLayerInteractionHints = (
+  type: "crop" | "algae" | "microbial",
+  metrics: Record<string, number> | undefined,
+) => {
+  if (!metrics) {
+    return [];
+  }
+
+  const pickMetric = (...keys: string[]) => {
+    for (const key of keys) {
+      const value = metrics[key];
+      const formatted = formatPercentish(typeof value === "number" ? value : null);
+      if (formatted) {
+        return formatted;
+      }
+    }
+    return null;
+  };
+
+  if (type === "crop") {
+    return [
+      ["Yield", pickMetric("calorie_yield", "edible_yield")],
+      ["Water Use", pickMetric("water_need")],
+    ].filter((item): item is [string, string] => Boolean(item[1]));
+  }
+
+  if (type === "algae") {
+    return [
+      ["O2 Support", pickMetric("oxygen_contribution")],
+      ["Biomass", pickMetric("biomass_production", "protein_potential")],
+    ].filter((item): item is [string, string] => Boolean(item[1]));
+  }
+
+  return [
+    ["Nutrient Loop", pickMetric("nutrient_conversion_capability", "loop_closure_contribution")],
+    ["Recycling", pickMetric("waste_recycling_efficiency")],
+  ].filter((item): item is [string, string] => Boolean(item[1]));
+};
+
 const Simulation = () => {
   const location = useLocation();
   const initialBundle = useMemo(() => {
@@ -79,6 +217,7 @@ const Simulation = () => {
   const [contamination, setContamination] = useState("");
   const [yieldDrop, setYieldDrop] = useState("");
   const [isApplyingStep, setIsApplyingStep] = useState(false);
+  const [showUpdateHighlight, setShowUpdateHighlight] = useState(false);
 
   useEffect(() => {
     if (!session) {
@@ -86,6 +225,15 @@ const Simulation = () => {
     }
     saveSimulationSession(session, previousSession);
   }, [previousSession, session]);
+
+  useEffect(() => {
+    if (!showUpdateHighlight) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => setShowUpdateHighlight(false), 1800);
+    return () => window.clearTimeout(timer);
+  }, [showUpdateHighlight]);
 
   if (!session) {
     return (
@@ -137,11 +285,36 @@ const Simulation = () => {
     ("adaptation_summary" in session ? session.adaptation_summary : "") ||
     session.ui_enhanced?.adaptation_summary ||
     "Simulation initialized with the selected biological stack. Apply mission events to see how the loop responds.";
+  const targetDurationDays = durationTargets[missionState.duration];
   const currentRisk = missionState.system_metrics.risk_level;
   const previousRisk =
     typeof riskDelta === "number"
       ? Math.max(0, currentRisk - riskDelta)
       : previousSession?.mission_state.system_metrics.risk_level ?? null;
+  const simulationStatus: SimulationStatusLabel =
+    session.mission_status === "CRITICAL"
+      ? "failure"
+      : missionState.time >= targetDurationDays
+        ? "complete"
+        : "running";
+  const simulationStatusTone =
+    simulationStatus === "failure"
+      ? "border-neon-red/35 bg-neon-red/12 text-neon-red"
+      : simulationStatus === "complete"
+        ? "border-neon-green/35 bg-neon-green/12 text-neon-green"
+        : "border-neon-cyan/30 bg-neon-cyan/10 text-neon-cyan";
+  const simulationStatusLabel =
+    simulationStatus === "failure"
+      ? "System Failure"
+      : simulationStatus === "complete"
+        ? "Simulation Complete"
+        : "Running";
+  const endReason =
+    simulationStatus === "failure"
+      ? `Critical mission stress ended this run. Final risk level: ${currentRisk.toFixed(2)}%.`
+      : simulationStatus === "complete"
+        ? `Mission duration target reached at ${missionState.time} day(s). Final risk level: ${currentRisk.toFixed(2)}%.`
+        : null;
   const riskTrend =
     riskDelta === null
       ? "Baseline"
@@ -174,17 +347,40 @@ const Simulation = () => {
     const label = item.kind === "grow_system" ? "Plant system" : `${formatLabel(item.kind)} layer`;
     return `${label}: ${formatLabel(item.from)} -> ${formatLabel(item.to)}`;
   });
+  const lastEventFeedback = buildEventFeedback(latestEvents);
+  const impactSnapshot = buildImpactSnapshot(latestEvents, riskDelta, humanSystemChanges.length > 0);
 
   const metricCards = [
-    { label: "Oxygen Level", value: missionState.system_metrics.oxygen_level, accent: "bg-neon-cyan" },
-    { label: "CO2 Balance", value: missionState.system_metrics.co2_balance, accent: "bg-neon-green" },
-    { label: "Food Supply", value: missionState.system_metrics.food_supply, accent: "bg-neon-gold" },
+    {
+      label: "Oxygen Level",
+      value: missionState.system_metrics.oxygen_level,
+      previousValue: previousSession?.mission_state.system_metrics.oxygen_level ?? null,
+      accent: "bg-neon-cyan",
+    },
+    {
+      label: "CO2 Balance",
+      value: missionState.system_metrics.co2_balance,
+      previousValue: previousSession?.mission_state.system_metrics.co2_balance ?? null,
+      accent: "bg-neon-green",
+    },
+    {
+      label: "Food Supply",
+      value: missionState.system_metrics.food_supply,
+      previousValue: previousSession?.mission_state.system_metrics.food_supply ?? null,
+      accent: "bg-neon-gold",
+    },
     {
       label: "Nutrient Cycle Efficiency",
       value: missionState.system_metrics.nutrient_cycle_efficiency,
+      previousValue: previousSession?.mission_state.system_metrics.nutrient_cycle_efficiency ?? null,
       accent: "bg-neon-orange",
     },
-    { label: "Risk Level", value: missionState.system_metrics.risk_level, accent: "bg-neon-red" },
+    {
+      label: "Risk Level",
+      value: missionState.system_metrics.risk_level,
+      previousValue: previousSession?.mission_state.system_metrics.risk_level ?? null,
+      accent: "bg-neon-red",
+    },
   ];
   const layerTransitions = previousSession
     ? layerSummaries
@@ -237,12 +433,13 @@ const Simulation = () => {
       setPreviousSession(currentSession);
       setSession(response);
       saveSimulationSession(response, currentSession);
+      setShowUpdateHighlight(true);
       setWaterDrop("");
       setEnergyDrop("");
       setContamination("");
       setYieldDrop("");
       toast.success("Simulation step applied", {
-        description: response.adaptation_summary,
+        description: `${buildEventFeedback(Object.keys(events).length > 0 ? events : null)} ${response.adaptation_summary}`,
       });
     } catch (requestError) {
       const message = requestError instanceof Error ? requestError.message : "Unable to advance the simulation.";
@@ -266,6 +463,9 @@ const Simulation = () => {
                 <span className={`rounded border px-2 py-0.5 text-[10px] font-mono ${statusClass(session.mission_status)}`}>
                   {session.mission_status}
                 </span>
+                <span className={`rounded border px-2 py-0.5 text-[10px] font-mono uppercase tracking-wider ${simulationStatusTone}`}>
+                  Simulation Status: {simulationStatusLabel}
+                </span>
               </div>
               <p className="max-w-4xl text-sm text-foreground/80">
                 {executiveSummary || "Simulation session is active."}
@@ -275,6 +475,8 @@ const Simulation = () => {
                 <span>Duration: <span className="text-foreground">{formatLabel(missionState.duration)}</span></span>
                 <span>Goal: <span className="text-foreground">{formatLabel(missionState.goal)}</span></span>
                 <span>Time: <span className="text-foreground">{missionState.time} day(s)</span></span>
+                <span>Current Step: <span className="text-foreground">{missionState.time}</span></span>
+                <span>Last Event: <span className="text-foreground">{lastEventFeedback}</span></span>
                 <span>
                   Mode: <span className="text-neon-green">Deterministic Simulation</span>
                 </span>
@@ -302,6 +504,39 @@ const Simulation = () => {
           </div>
         </div>
 
+        {simulationStatus !== "running" && (
+          <div
+            className={`glass-panel overflow-hidden p-4 ${
+              simulationStatus === "failure"
+                ? "border-neon-red/40 bg-neon-red/10"
+                : "border-neon-green/35 bg-neon-green/8"
+            }`}
+          >
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="space-y-1">
+                <p
+                  className={`text-lg font-bold uppercase tracking-[0.16em] ${
+                    simulationStatus === "failure" ? "text-neon-red" : "text-neon-green"
+                  }`}
+                >
+                  {simulationStatus === "failure" ? "System Failure" : "Simulation Complete"}
+                </p>
+                <p className="text-sm text-foreground/85">{endReason}</p>
+              </div>
+              <div className="rounded-lg border border-glass-border bg-black/10 px-3 py-2 text-right">
+                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Final Risk Level</p>
+                <p
+                  className={`mt-1 text-xl font-mono ${
+                    simulationStatus === "failure" ? "text-neon-red" : "text-neon-green"
+                  }`}
+                >
+                  {currentRisk.toFixed(2)}%
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="glass-panel flex min-w-0 flex-col gap-4 overflow-hidden p-4">
           <div className="flex items-center gap-2">
             <Orbit className="h-4 w-4 text-neon-cyan" />
@@ -323,6 +558,18 @@ const Simulation = () => {
                       </div>
                       <h3 className="text-lg font-semibold text-foreground">{formatLabel(layer.name)}</h3>
                       <p className="max-w-4xl text-sm leading-relaxed text-foreground/78">{layer.summary}</p>
+                      {buildLayerInteractionHints(layer.type, session.selected_system?.[layer.type]?.metrics).length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {buildLayerInteractionHints(layer.type, session.selected_system?.[layer.type]?.metrics).map(([label, value]) => (
+                            <span
+                              key={`${layer.type}-${label}`}
+                              className="rounded border border-glass-border/70 bg-muted/10 px-2 py-1 text-[10px] font-mono text-muted-foreground"
+                            >
+                              {label}: <span className="text-foreground">{value}</span>
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div className="grid min-w-[180px] grid-cols-2 gap-2 text-right text-[10px] font-mono text-muted-foreground">
                       <div>
@@ -379,13 +626,30 @@ const Simulation = () => {
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-1">
               {metricCards.map((metric) => (
-                <div key={metric.label} className="rounded-lg border border-glass-border bg-muted/10 p-3">
+                <div
+                  key={metric.label}
+                  className={`rounded-lg border border-glass-border bg-muted/10 p-3 ${
+                    showUpdateHighlight && metric.previousValue !== null && Math.abs(metric.value - metric.previousValue) >= 0.01
+                      ? "ring-1 ring-neon-cyan/40"
+                      : ""
+                  }`}
+                >
                   <div className="mb-1 flex items-center justify-between gap-2">
                     <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
                       {metric.label}
                     </span>
                     <span className="text-sm font-mono text-foreground">{Math.round(metric.value)}%</span>
                   </div>
+                  {metric.previousValue !== null && (
+                    <div className="mb-2 flex items-center justify-between gap-2 text-[10px] font-mono">
+                      <span className="text-muted-foreground">
+                        {Math.round(metric.previousValue)}% {"->"} {Math.round(metric.value)}%
+                      </span>
+                      <span className={formatDeltaArrow(metric.value - metric.previousValue).tone}>
+                        {formatDeltaArrow(metric.value - metric.previousValue).arrow} {formatDeltaArrow(metric.value - metric.previousValue).label}
+                      </span>
+                    </div>
+                  )}
                   <div className="h-2 overflow-hidden rounded-full bg-muted">
                     <div className={`h-full rounded-full ${metric.accent}`} style={{ width: `${metric.value}%` }} />
                   </div>
@@ -433,15 +697,24 @@ const Simulation = () => {
               Enter only the events you want to apply. Leaving all event fields empty will still advance the mission by
               the selected time step.
             </div>
+            <div
+              className={`rounded-lg border px-3 py-2 text-xs ${
+                showUpdateHighlight
+                  ? "border-neon-cyan/35 bg-neon-cyan/8 text-neon-cyan"
+                  : "border-glass-border bg-muted/10 text-muted-foreground"
+              }`}
+            >
+              {lastEventFeedback}
+            </div>
 
             <Button
               type="button"
               onClick={handleApplyStep}
-              disabled={isApplyingStep}
+              disabled={isApplyingStep || simulationStatus !== "running"}
               className="mt-auto h-10 bg-primary font-bold uppercase tracking-wider text-primary-foreground hover:bg-primary/90"
             >
               {isApplyingStep ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FlaskConical className="mr-2 h-4 w-4" />}
-              {isApplyingStep ? "Applying Step" : "Apply Simulation Step"}
+              {isApplyingStep ? "Applying Step" : simulationStatus === "running" ? "Apply Simulation Step" : "Simulation Closed"}
             </Button>
           </div>
         </div>
@@ -454,18 +727,37 @@ const Simulation = () => {
                 Adaptation & Results
               </h2>
             </div>
-            <div className="rounded-lg border border-glass-border bg-terminal/40 p-3">
+            <div
+              className={`rounded-lg border px-3 py-2 text-xs leading-relaxed ${
+                showUpdateHighlight
+                  ? "border-neon-cyan/35 bg-neon-cyan/8 text-foreground"
+                  : "border-glass-border bg-muted/10 text-foreground/80"
+              }`}
+            >
+              <span className="font-mono uppercase tracking-wider text-neon-cyan">Impact Snapshot:</span>{" "}
+              {impactSnapshot}
+            </div>
+            <div
+              className={`rounded-lg border bg-terminal/40 p-3 ${
+                showUpdateHighlight ? "border-neon-cyan/35" : "border-glass-border"
+              }`}
+            >
               <p className="text-xs leading-relaxed text-foreground/80">{adaptationSummary}</p>
             </div>
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <div className="rounded-lg border border-glass-border bg-muted/10 p-3">
+              <div className={`rounded-lg border border-glass-border bg-muted/10 p-3 ${showUpdateHighlight ? "ring-1 ring-neon-cyan/40" : ""}`}>
                 <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Risk Shift</p>
                 <p className="mt-2 text-sm font-mono text-foreground">
                   {previousRisk !== null ? `${previousRisk.toFixed(2)}% -> ${currentRisk.toFixed(2)}%` : `${currentRisk.toFixed(2)}%`}
                 </p>
                 <p className={`mt-1 text-xs font-mono ${riskTrend === "Increased" ? "text-neon-red" : riskTrend === "Decreased" ? "text-neon-green" : "text-muted-foreground"}`}>
                   {riskTrend}
+                  {typeof riskDelta === "number" && (
+                    <span className="ml-2">
+                      {formatDeltaArrow(riskDelta).arrow} {formatDeltaArrow(riskDelta).label}
+                    </span>
+                  )}
                 </p>
               </div>
               <div className="rounded-lg border border-glass-border bg-muted/10 p-3">
@@ -636,6 +928,12 @@ const Simulation = () => {
               <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Water Margin</span>
             </div>
             <p className="text-2xl font-mono text-foreground">{Math.round(missionState.resources.water)}%</p>
+            {previousSession && (
+              <p className={`text-xs font-mono ${formatDeltaArrow(missionState.resources.water - previousSession.mission_state.resources.water).tone}`}>
+                {Math.round(previousSession.mission_state.resources.water)}% {"->"} {Math.round(missionState.resources.water)}%{" "}
+                {formatDeltaArrow(missionState.resources.water - previousSession.mission_state.resources.water).arrow}
+              </p>
+            )}
           </div>
           <div className="glass-panel flex min-h-[120px] min-w-0 flex-col gap-2 overflow-hidden p-3">
             <div className="flex items-center gap-2">
@@ -643,6 +941,12 @@ const Simulation = () => {
               <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Energy Margin</span>
             </div>
             <p className="text-2xl font-mono text-foreground">{Math.round(missionState.resources.energy)}%</p>
+            {previousSession && (
+              <p className={`text-xs font-mono ${formatDeltaArrow(missionState.resources.energy - previousSession.mission_state.resources.energy).tone}`}>
+                {Math.round(previousSession.mission_state.resources.energy)}% {"->"} {Math.round(missionState.resources.energy)}%{" "}
+                {formatDeltaArrow(missionState.resources.energy - previousSession.mission_state.resources.energy).arrow}
+              </p>
+            )}
           </div>
           <div className="glass-panel flex min-h-[120px] min-w-0 flex-col gap-2 overflow-hidden p-3">
             <div className="flex items-center gap-2">
@@ -650,6 +954,12 @@ const Simulation = () => {
               <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Area Margin</span>
             </div>
             <p className="text-2xl font-mono text-foreground">{Math.round(missionState.resources.area)}%</p>
+            {previousSession && (
+              <p className={`text-xs font-mono ${formatDeltaArrow(missionState.resources.area - previousSession.mission_state.resources.area).tone}`}>
+                {Math.round(previousSession.mission_state.resources.area)}% {"->"} {Math.round(missionState.resources.area)}%{" "}
+                {formatDeltaArrow(missionState.resources.area - previousSession.mission_state.resources.area).arrow}
+              </p>
+            )}
           </div>
         </div>
       </div>

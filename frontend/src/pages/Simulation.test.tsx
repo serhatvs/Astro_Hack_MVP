@@ -177,4 +177,29 @@ describe("Simulation page", () => {
     expect(screen.getByText("Lactuca Sativa (Marul)")).toBeInTheDocument();
     expect(screen.getByText("Deterministic Simulation")).toBeInTheDocument();
   });
+
+  it("shows a strong failure banner when the simulation reaches a critical state", () => {
+    const failedSession: SimulationStartResponse = {
+      ...session,
+      mission_status: "CRITICAL",
+      mission_state: {
+        ...session.mission_state,
+        system_metrics: {
+          ...session.mission_state.system_metrics,
+          risk_level: 82,
+        },
+      },
+    };
+
+    render(
+      <MemoryRouter initialEntries={[{ pathname: "/simulation", state: { session: failedSession } }]}>
+        <Routes>
+          <Route path="/simulation" element={<Simulation />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText("System Failure")).toBeInTheDocument();
+    expect(screen.getByText(/^Final Risk Level$/i)).toBeInTheDocument();
+  });
 });
