@@ -867,7 +867,7 @@ const Simulation = () => {
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <div className={`rounded-lg border border-glass-border bg-muted/10 p-3 ${showUpdateHighlight ? "ring-1 ring-neon-cyan/40" : ""}`}>
-                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Risk Shift</p>
+                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Cumulative Risk</p>
                 <p className="mt-2 text-sm font-mono text-foreground">
                   {previousRisk !== null ? `${previousRisk.toFixed(2)}% -> ${currentRisk.toFixed(2)}%` : `${currentRisk.toFixed(2)}%`}
                 </p>

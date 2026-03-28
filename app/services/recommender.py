@@ -38,6 +38,7 @@ from app.models.response import (
     DomainScoreVector,
     ExplanationBundle,
     InteractionScoreBundle,
+    MissionStatus,
     MissionStepResponse,
     RecommendationResponse,
     RankedCandidatesBundle,
@@ -54,6 +55,9 @@ from app.models.response import (
 from app.services.data_provider import DataProvider, JSONDataProvider
 from app.services.explainer import Explainer
 from app.services.resource_planner import ResourcePlanner
+
+RISK_DECAY = 0.02
+RISK_COLLAPSE_THRESHOLD = 0.85
 
 
 class RecommendationEngine:
@@ -429,12 +433,26 @@ class RecommendationEngine:
             allow_refinement=False,
             use_llm=False,
         )
+        cumulative_state, cumulative_risk_delta = self._apply_cumulative_risk(
+            previous_state=previous_state,
+            updated_state=response.mission_state,
+            events=request.events,
+        )
+        mission_status = (
+            MissionStatus.CRITICAL
+            if cumulative_state.system_metrics.risk_level / 100 >= RISK_COLLAPSE_THRESHOLD
+            else response.mission_status
+        )
+        response = response.model_copy(
+            update={
+                "mission_state": cumulative_state,
+                "mission_status": mission_status,
+            },
+        )
+        self.state_store.save(cumulative_state)
 
         system_changes = self._build_system_changes(previous_state, response.mission_state)
-        risk_delta = round(
-            response.mission_state.system_metrics.risk_level - previous_state.system_metrics.risk_level,
-            3,
-        )
+        risk_delta = cumulative_risk_delta
         adaptation_summary = self._build_mission_step_summary(
             previous_state=previous_state,
             updated_state=response.mission_state,
@@ -466,7 +484,7 @@ class RecommendationEngine:
             explanations=response.explanations,
             ui_enhanced=step_narrative.ui_layer,
             llm_analysis=step_narrative.debug_layer,
-            mission_status=response.mission_status,
+            mission_status=mission_status,
             operational_note=response.operational_note,
             system_changes=system_changes,
             risk_delta=risk_delta,
@@ -1079,6 +1097,112 @@ class RecommendationEngine:
             merged[key] = max(merged.get(key, 0.0), value)
         return merged
 
+    def _apply_cumulative_risk(
+        self,
+        previous_state: MissionState,
+        updated_state: MissionState,
+        events: MissionEvents | None,
+    ) -> tuple[MissionState, float]:
+        previous_risk = previous_state.system_metrics.risk_level / 100
+        delta_risk = self._compute_weekly_delta_risk(previous_state, updated_state, events)
+        cumulative_risk = max(
+            0.0,
+            min(1.0, (previous_risk * (1 - RISK_DECAY)) + delta_risk),
+        )
+        cumulative_risk_level = round(cumulative_risk * 100, 2)
+        risk_delta = round(cumulative_risk_level - previous_state.system_metrics.risk_level, 3)
+
+        updated_metrics = updated_state.system_metrics.model_copy(
+            update={"risk_level": cumulative_risk_level},
+            deep=True,
+        )
+        updated_history = list(updated_state.history)
+        if updated_history:
+            updated_history[-1] = updated_history[-1].model_copy(
+                update={"risk_level": cumulative_risk_level},
+                deep=True,
+            )
+
+        return (
+            updated_state.model_copy(
+                update={
+                    "system_metrics": updated_metrics,
+                    "history": updated_history,
+                },
+                deep=True,
+            ),
+            risk_delta,
+        )
+
+    def _compute_weekly_delta_risk(
+        self,
+        previous_state: MissionState,
+        updated_state: MissionState,
+        events: MissionEvents | None,
+    ) -> float:
+        crop, algae, microbial = self._resolve_active_candidates(updated_state)
+        instantaneous_risk = updated_state.system_metrics.risk_level / 100
+
+        water_pressure = max(0.0, 45 - updated_state.resources.water) / 180
+        energy_pressure = max(0.0, 45 - updated_state.resources.energy) / 200
+        crop_pressure = (
+            ((crop.risk / 2000) + (crop.maintenance / 2600))
+            if crop is not None
+            else 0.02
+        )
+        crop_mismatch = (
+            max(0.0, (crop.water_need - updated_state.resources.water) / 900)
+            if crop is not None
+            else 0.0
+        )
+        microbial_gap = (
+            max(0.0, 65 - microbial.loop_closure_contribution) / 1800
+            if microbial is not None
+            else 0.02
+        )
+        event_pressure = 0.0
+        if events is not None:
+            if events.contamination is not None:
+                event_pressure += events.contamination / 300
+            if events.water_drop is not None:
+                event_pressure += events.water_drop / 700
+            if events.energy_drop is not None:
+                event_pressure += events.energy_drop / 800
+            if events.yield_variation is not None and events.yield_variation < 0:
+                event_pressure += abs(events.yield_variation) / 700
+
+        atmospheric_relief = (
+            ((algae.oxygen_contribution / 5000) + (algae.co2_utilization / 7000))
+            if algae is not None
+            else 0.0
+        )
+        microbial_relief = (
+            ((microbial.nutrient_conversion_capability / 5500) + (microbial.waste_recycling_efficiency / 7000))
+            if microbial is not None
+            else 0.0
+        )
+        stability_relief = 0.012
+        if updated_state.system_metrics.oxygen_level >= previous_state.system_metrics.oxygen_level:
+            stability_relief += 0.008
+        if updated_state.system_metrics.nutrient_cycle_efficiency >= previous_state.system_metrics.nutrient_cycle_efficiency:
+            stability_relief += 0.008
+
+        instantaneous_pressure = max(0.0, instantaneous_risk - 0.25) * 0.25
+
+        delta_risk = (
+            water_pressure
+            + energy_pressure
+            + crop_pressure
+            + crop_mismatch
+            + microbial_gap
+            + event_pressure
+            + instantaneous_pressure
+            - atmospheric_relief
+            - microbial_relief
+            - stability_relief
+        )
+        return round(max(-0.03, min(0.16, delta_risk)), 4)
+
     def _derive_event_adjustments(
         self,
         state: MissionState,
@@ -1253,10 +1377,10 @@ class RecommendationEngine:
         previous_risk = previous_state.system_metrics.risk_level
         updated_risk = updated_state.system_metrics.risk_level
         if risk_delta > 0.05:
-            return f"risk rose from {previous_risk:.2f} to {updated_risk:.2f}"
+            return f"system stress accumulated and risk rose from {previous_risk:.2f} to {updated_risk:.2f}"
         if risk_delta < -0.05:
-            return f"risk fell from {previous_risk:.2f} to {updated_risk:.2f}"
-        return f"risk held near {updated_risk:.2f}"
+            return f"risk pressure eased from {previous_risk:.2f} to {updated_risk:.2f}"
+        return f"risk held near {updated_risk:.2f} after weekly carry-over"
 
     def _build_mission_step_summary(
         self,

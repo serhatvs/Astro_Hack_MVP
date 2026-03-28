@@ -393,3 +393,58 @@ def test_mission_step_applies_weekly_baseline_drain_without_explicit_events(monk
     assert data["mission_state"]["resources"]["water"] < bootstrap_data["mission_state"]["resources"]["water"]
     assert data["mission_state"]["resources"]["energy"] < bootstrap_data["mission_state"]["resources"]["energy"]
     assert data["adaptation_summary"].startswith("Week 1:")
+
+
+def test_mission_step_risk_accumulates_across_weeks(monkeypatch) -> None:
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    bootstrap = client.post(
+        "/simulation/start",
+        json={
+            "mission_profile": {
+                "environment": "mars",
+                "duration": "medium",
+                "constraints": {
+                    "water": "medium",
+                    "energy": "medium",
+                    "area": "medium",
+                },
+                "goal": "balanced",
+            },
+            "selected_crop": "Lactuca sativa (Marul)",
+            "selected_algae": "Chlorella vulgaris",
+            "selected_microbial": "Saccharomyces boulardii",
+        },
+    )
+    assert bootstrap.status_code == 200
+    bootstrap_data = bootstrap.json()
+    mission_id = bootstrap_data["mission_state"]["mission_id"]
+    initial_risk = bootstrap_data["mission_state"]["system_metrics"]["risk_level"]
+
+    stressed = client.post(
+        "/mission/step",
+        json={
+            "mission_id": mission_id,
+            "time_step": 1,
+            "events": {
+                "water_drop": 15,
+                "contamination": 20,
+            },
+        },
+    )
+    assert stressed.status_code == 200
+    stressed_data = stressed.json()
+
+    recovered = client.post(
+        "/mission/step",
+        json={
+            "mission_id": mission_id,
+            "time_step": 1,
+        },
+    )
+    assert recovered.status_code == 200
+    recovered_data = recovered.json()
+
+    assert stressed_data["mission_state"]["system_metrics"]["risk_level"] > initial_risk
+    assert recovered_data["mission_state"]["system_metrics"]["risk_level"] >= 0
+    assert recovered_data["mission_state"]["system_metrics"]["risk_level"] <= 100
+    assert recovered_data["mission_state"]["system_metrics"]["risk_level"] != initial_risk
