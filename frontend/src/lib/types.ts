@@ -229,6 +229,18 @@ export interface UIEnhancedNarrative {
   adaptation_summary: string;
 }
 
+export type AIInsightKind = "simulation_intro" | "simulation_end" | "deep_analysis";
+
+export interface AIInsight {
+  kind: AIInsightKind;
+  title: string;
+  summary: string;
+  highlights: string[];
+  generated_by_ai: boolean;
+  model_tier: string;
+  model_name: string;
+}
+
 export interface RecommendationResponse {
   mission_profile: MissionPayload;
   mission_state?: MissionState;
@@ -270,6 +282,21 @@ export interface SimulationStartResponse {
   llm_analysis: LLMAnalysis;
   mission_status: MissionStatus;
   operational_note: string;
+}
+
+export interface AIInsightRequest {
+  kind: AIInsightKind;
+  mission_profile: MissionPayload;
+  selected_system: SelectedSystemBundle;
+  scores: ScoreBundle;
+  explanations?: ExplanationBundle;
+  mission_state?: MissionState;
+  ui_enhanced?: UIEnhancedNarrative;
+  llm_analysis?: LLMAnalysis;
+  mission_status?: MissionStatus;
+  events?: MissionEventsPayload | null;
+  adaptation_summary?: string;
+  premium?: boolean;
 }
 
 export interface MissionEventsPayload {

@@ -1,4 +1,6 @@
 import type {
+  AIInsight,
+  AIInsightRequest,
   DemoCase,
   HealthResponse,
   MissionStepPayload,
@@ -58,6 +60,13 @@ export function startSimulation(payload: SimulationStartPayload): Promise<Simula
 
 export function stepMission(payload: MissionStepPayload): Promise<MissionStepResponse> {
   return request<MissionStepResponse>("/mission/step", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function generateSimulationInsight(payload: AIInsightRequest): Promise<AIInsight> {
+  return request<AIInsight>("/simulation/insight", {
     method: "POST",
     body: JSON.stringify(payload),
   });

@@ -25,6 +25,12 @@ class MissionStatus(StrEnum):
     CRITICAL = "CRITICAL"
 
 
+class AIInsightKind(StrEnum):
+    SIMULATION_INTRO = "simulation_intro"
+    SIMULATION_END = "simulation_end"
+    DEEP_ANALYSIS = "deep_analysis"
+
+
 class MetricBreakdown(BaseModel):
     """Normalized crop metric view for UI presentation."""
 
@@ -319,6 +325,55 @@ class GeminiNarrative(BaseModel):
         )
 
 
+class AIInsight(BaseModel):
+    """Structured AI insight returned for safe, low-frequency UX moments."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: AIInsightKind
+    title: str
+    summary: str
+    highlights: list[str] = Field(default_factory=list)
+    generated_by_ai: bool = False
+    model_tier: str = "deterministic"
+    model_name: str = ""
+
+    @classmethod
+    def from_payload(
+        cls,
+        *,
+        kind: AIInsightKind,
+        payload: Mapping[str, Any] | None = None,
+        defaults: Mapping[str, Any] | None = None,
+        generated_by_ai: bool = False,
+        model_tier: str = "deterministic",
+        model_name: str = "",
+    ) -> "AIInsight":
+        payload = payload or {}
+        defaults = defaults or {}
+        title = payload.get("title")
+        summary = payload.get("summary")
+        highlights = payload.get("highlights")
+        if not isinstance(title, str) or not title.strip():
+            title = str(defaults.get("title", "AI Insight")).strip()
+        if not isinstance(summary, str) or not summary.strip():
+            summary = str(defaults.get("summary", "Deterministic fallback insight is active.")).strip()
+        if isinstance(highlights, str):
+            highlights = [highlights]
+        if not isinstance(highlights, list):
+            highlights = defaults.get("highlights", [])
+        normalized_highlights = [str(item).strip() for item in highlights if str(item).strip()]
+        return cls(
+            kind=kind,
+            title=title.strip(),
+            summary=summary.strip(),
+            highlights=normalized_highlights[:4],
+            generated_by_ai=generated_by_ai,
+            model_tier=model_tier,
+            model_name=model_name,
+        )
+
+
 class RecommendationResponse(BaseModel):
     """Main response body returned by the recommendation engine."""
 
@@ -361,6 +416,25 @@ class SimulationStartRequest(BaseModel):
     selected_crop: str
     selected_algae: str
     selected_microbial: str
+
+
+class AIInsightRequest(BaseModel):
+    """Request body for optional low-frequency AI insight generation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: AIInsightKind
+    mission_profile: MissionProfile
+    selected_system: SelectedSystemBundle
+    scores: ScoreBundle
+    explanations: ExplanationBundle | None = None
+    mission_state: MissionState | None = None
+    ui_enhanced: UIEnhancedNarrative | None = None
+    llm_analysis: LLMAnalysis | None = None
+    mission_status: MissionStatus | None = None
+    events: MissionEvents | None = None
+    adaptation_summary: str = ""
+    premium: bool = False
 
 
 class SimulationStartResponse(BaseModel):

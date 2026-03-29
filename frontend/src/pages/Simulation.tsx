@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowDownRight, ArrowLeft, ArrowRight, ArrowUpRight, FlaskConical, Loader2, Orbit, Play, ShieldAlert, Waves, Zap } from "lucide-react";
+import { ArrowDownRight, ArrowLeft, ArrowRight, ArrowUpRight, Bot, FlaskConical, Loader2, Orbit, Play, ShieldAlert, Sparkles, Waves, Zap } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { stepMission } from "@/lib/api";
+import { generateSimulationInsight, stepMission } from "@/lib/api";
 import { buildLayerSummaries, formatLabel, getExecutiveSummary } from "@/lib/mission-view";
 import { loadSimulationSession, saveSimulationSession, type SimulationSession } from "@/lib/simulation-session";
 import type {
+  AIInsight,
+  AIInsightKind,
   MissionEventsPayload,
   MissionStatus,
 } from "@/lib/types";
@@ -289,6 +291,12 @@ const Simulation = () => {
   const [yieldDrop, setYieldDrop] = useState("");
   const [isApplyingStep, setIsApplyingStep] = useState(false);
   const [showUpdateHighlight, setShowUpdateHighlight] = useState(false);
+  const [introInsight, setIntroInsight] = useState<AIInsight | null>(null);
+  const [endInsight, setEndInsight] = useState<AIInsight | null>(null);
+  const [deepInsight, setDeepInsight] = useState<AIInsight | null>(null);
+  const [isLoadingIntroInsight, setIsLoadingIntroInsight] = useState(false);
+  const [isLoadingEndInsight, setIsLoadingEndInsight] = useState(false);
+  const [isLoadingDeepInsight, setIsLoadingDeepInsight] = useState(false);
 
   useEffect(() => {
     if (!session) {
@@ -305,6 +313,118 @@ const Simulation = () => {
     const timer = window.setTimeout(() => setShowUpdateHighlight(false), 1800);
     return () => window.clearTimeout(timer);
   }, [showUpdateHighlight]);
+
+  const buildInsightRequest = (kind: AIInsightKind, premium = false) => {
+    if (!session) {
+      return null;
+    }
+
+    return {
+      kind,
+      mission_profile: session.mission_profile,
+      selected_system: session.selected_system,
+      scores: session.scores,
+      explanations: session.explanations,
+      mission_state: session.mission_state,
+      ui_enhanced: session.ui_enhanced,
+      llm_analysis: session.llm_analysis,
+      mission_status: session.mission_status,
+      events: "events" in session ? session.events ?? undefined : undefined,
+      adaptation_summary:
+        ("adaptation_summary" in session ? session.adaptation_summary : "") ||
+        session.ui_enhanced?.adaptation_summary ||
+        "",
+      premium,
+    };
+  };
+
+  useEffect(() => {
+    if (!session || session.mission_state.time !== 0 || introInsight || isLoadingIntroInsight) {
+      return;
+    }
+
+    const payload = buildInsightRequest("simulation_intro");
+    if (!payload) {
+      return;
+    }
+
+    let active = true;
+    setIsLoadingIntroInsight(true);
+    generateSimulationInsight(payload)
+      .then((insight) => {
+        if (!active) {
+          return;
+        }
+        setIntroInsight(insight);
+      })
+      .catch((error) => {
+        if (!active) {
+          return;
+        }
+        const message = error instanceof Error ? error.message : "Unable to load the AI intro insight.";
+        toast.error("AI intro unavailable", { description: message });
+      })
+      .finally(() => {
+        if (active) {
+          setIsLoadingIntroInsight(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [introInsight, isLoadingIntroInsight, session]);
+
+  useEffect(() => {
+    if (!session || endInsight || isLoadingEndInsight) {
+      return;
+    }
+
+    const endReason = session.mission_state.end_reason;
+    const riskLevel = session.mission_state.system_metrics.risk_level;
+    const maxWeeks = session.mission_state.max_weeks ?? durationWeekTargets[session.mission_state.duration];
+    const ended =
+      endReason === "water_depleted" ||
+      endReason === "energy_depleted" ||
+      endReason === "risk_collapse" ||
+      endReason === "duration_complete" ||
+      session.mission_state.time >= maxWeeks ||
+      riskLevel >= 85;
+    if (!ended) {
+      return;
+    }
+
+    const payload = buildInsightRequest("simulation_end");
+    if (!payload) {
+      return;
+    }
+
+    let active = true;
+    setIsLoadingEndInsight(true);
+    generateSimulationInsight(payload)
+      .then((insight) => {
+        if (!active) {
+          return;
+        }
+        setEndInsight(insight);
+      })
+      .catch((error) => {
+        if (!active) {
+          return;
+        }
+        const message = error instanceof Error ? error.message : "Unable to load the AI end insight.";
+        toast.error("AI end insight unavailable", { description: message });
+      })
+      .finally(() => {
+        if (active) {
+          setIsLoadingEndInsight(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [endInsight, isLoadingEndInsight, session]);
 
   if (!session) {
     return (
@@ -356,6 +476,10 @@ const Simulation = () => {
     ("adaptation_summary" in session ? session.adaptation_summary : "") ||
     session.ui_enhanced?.adaptation_summary ||
     "Simulation initialized with the selected biological stack. Apply mission events to see how the loop responds.";
+  const introInsightSummary =
+    introInsight?.summary ||
+    executiveSummary ||
+    "AI insight will summarize expected ecosystem behavior at the start of the simulation.";
   const maxWeeks = missionState.max_weeks ?? durationWeekTargets[missionState.duration];
   const recoveredWater = missionState.last_recovered_water ?? 0;
   const recoveryQueueSize = missionState.water_recovery_queue?.length ?? 0;
@@ -410,7 +534,11 @@ const Simulation = () => {
         ? "Increased"
         : riskDelta < -0.05
           ? "Decreased"
-          : "Stable";
+        : "Stable";
+  const activeAIInsight = deepInsight || (simulationStatus === "running" ? introInsight : endInsight);
+  const aiInsightTone = activeAIInsight?.generated_by_ai
+    ? "border-neon-cyan/35 bg-neon-cyan/8 text-neon-cyan"
+    : "border-glass-border bg-muted/10 text-muted-foreground";
   const previousPlantSystem =
     previousLayerSummaries.find((layer) => layer.type === "crop")?.supportSystem ||
     parsedSystemChanges.find((item) => item.kind === "grow_system")?.from ||
@@ -524,6 +652,7 @@ const Simulation = () => {
       });
       setPreviousSession(currentSession);
       setSession(response);
+      setDeepInsight(null);
       saveSimulationSession(response, currentSession, initialSession);
       setShowUpdateHighlight(true);
       setWaterDrop("");
@@ -541,6 +670,29 @@ const Simulation = () => {
     }
   };
 
+  const handleDeepAnalysis = async (premium = false) => {
+    const payload = buildInsightRequest("deep_analysis", premium);
+    if (!payload) {
+      return;
+    }
+
+    setIsLoadingDeepInsight(true);
+    try {
+      const insight = await generateSimulationInsight(payload);
+      setDeepInsight(insight);
+      toast.success("AI analysis ready", {
+        description: insight.generated_by_ai
+          ? `${insight.model_tier.toUpperCase()} insight generated.`
+          : "Deterministic fallback insight returned.",
+      });
+    } catch (requestError) {
+      const message = requestError instanceof Error ? requestError.message : "Unable to analyze the current ecosystem.";
+      toast.error("AI analysis failed", { description: message });
+    } finally {
+      setIsLoadingDeepInsight(false);
+    }
+  };
+
   const handleRunAgain = () => {
     if (!initialSession) {
       navigate("/");
@@ -555,6 +707,9 @@ const Simulation = () => {
     setContamination("");
     setYieldDrop("");
     setShowUpdateHighlight(false);
+    setEndInsight(null);
+    setDeepInsight(null);
+    setIntroInsight(null);
     toast.success("Simulation reset", {
       description: "The ecosystem returned to its initial launch state.",
     });
@@ -620,6 +775,29 @@ const Simulation = () => {
             <div className="rounded-lg border border-glass-border bg-terminal/50 p-4">
               <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Final Deterministic Summary</p>
               <p className="mt-2 text-sm leading-relaxed text-foreground/80">{adaptationSummary}</p>
+            </div>
+
+            <div className={`rounded-lg border p-4 ${aiInsightTone}`}>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[10px] font-mono uppercase tracking-wider">
+                  AI Outcome Insight
+                </p>
+                <span className="rounded border border-current/30 px-2 py-0.5 text-[10px] font-mono uppercase tracking-wider">
+                  {endInsight?.generated_by_ai ? endInsight.model_tier : "fallback"}
+                </span>
+              </div>
+              <p className="mt-2 text-sm leading-relaxed text-foreground/85">
+                {isLoadingEndInsight
+                  ? "Generating a final AI explanation for the completed simulation..."
+                  : endInsight?.summary || adaptationSummary}
+              </p>
+              {(endInsight?.highlights?.length ?? 0) > 0 && (
+                <div className="mt-3 space-y-1 text-xs text-foreground/80">
+                  {endInsight?.highlights.slice(0, 3).map((item) => (
+                    <p key={item}>• {item}</p>
+                  ))}
+                </div>
+              )}
             </div>
 
             {recentTimeline.length > 0 && (
@@ -697,6 +875,16 @@ const Simulation = () => {
                 <p className="text-[9px] font-mono uppercase tracking-wider text-neon-orange">Operational Note</p>
                 <p className="mt-1 max-w-sm text-xs leading-relaxed text-foreground/75">{session.operational_note}</p>
               </div>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void handleDeepAnalysis(false)}
+                disabled={isLoadingDeepInsight}
+                className="border-neon-cyan/30 bg-neon-cyan/10 text-neon-cyan hover:bg-neon-cyan/20"
+              >
+                {isLoadingDeepInsight ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+                Analyze System
+              </Button>
               <Button asChild variant="outline" className="border-glass-border bg-muted/20 text-foreground hover:bg-muted/35">
                 <Link to="/">
                   <ArrowLeft className="h-4 w-4" />
@@ -1036,8 +1224,34 @@ const Simulation = () => {
             <div className="flex items-center gap-2">
               <ShieldAlert className="h-4 w-4 text-neon-orange" />
               <h2 className="text-[10px] font-mono uppercase tracking-[0.24em] text-muted-foreground">
-                Deterministic Analysis & Event Trace
+                Analysis & Event Trace
               </h2>
+            </div>
+
+            <div className={`rounded-lg border p-3 ${aiInsightTone}`}>
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Bot className="h-4 w-4" />
+                  <p className="text-[10px] font-mono uppercase tracking-wider">
+                    AI Insight
+                  </p>
+                </div>
+                <span className="rounded border border-current/30 px-2 py-0.5 text-[10px] font-mono uppercase tracking-wider">
+                  {activeAIInsight?.generated_by_ai ? activeAIInsight.model_tier : "fallback"}
+                </span>
+              </div>
+              <p className="mt-2 text-xs leading-relaxed text-foreground/85">
+                {isLoadingIntroInsight && simulationStatus === "running"
+                  ? "Generating a short AI introduction for this ecosystem stack..."
+                  : activeAIInsight?.summary || introInsightSummary}
+              </p>
+              {(activeAIInsight?.highlights?.length ?? 0) > 0 && (
+                <div className="mt-3 space-y-1 text-xs text-foreground/80">
+                  {activeAIInsight?.highlights.slice(0, 3).map((item) => (
+                    <p key={item}>• {item}</p>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="rounded-lg border border-glass-border bg-terminal p-3">

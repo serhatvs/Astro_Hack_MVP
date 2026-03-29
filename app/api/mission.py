@@ -6,6 +6,8 @@ from fastapi import APIRouter
 
 from app.core.simulation import MissionStepRequest
 from app.models.response import (
+    AIInsight,
+    AIInsightRequest,
     MissionStepResponse,
     SimulationRequest,
     SimulationResponse,
@@ -37,3 +39,10 @@ def mission_step(payload: MissionStepRequest) -> MissionStepResponse:
     """Advance a stored mission state by one bounded time step."""
 
     return get_default_engine().mission_step(payload)
+
+
+@router.post("/simulation/insight", response_model=AIInsight)
+def simulation_insight(payload: AIInsightRequest) -> AIInsight:
+    """Generate optional AI insight for simulation start/end or manual deep analysis."""
+
+    return get_default_engine().generate_ai_insight(payload)

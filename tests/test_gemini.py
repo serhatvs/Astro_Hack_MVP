@@ -2,6 +2,7 @@ import sys
 from types import ModuleType, SimpleNamespace
 
 from app.core.simulation import MissionEvents, MissionStepRequest
+from app.llm.ai_service import AIService
 from app.llm.gemini_client import GeminiClient
 from app.models.mission import (
     ChangeEvent,
@@ -12,7 +13,14 @@ from app.models.mission import (
     MissionConstraints,
     MissionProfile,
 )
-from app.models.response import LLMAnalysis, SimulationRequest, SimulationStartRequest, UIEnhancedNarrative
+from app.models.response import (
+    AIInsightKind,
+    AIInsightRequest,
+    LLMAnalysis,
+    SimulationRequest,
+    SimulationStartRequest,
+    UIEnhancedNarrative,
+)
 from app.services.data_provider import JSONDataProvider
 from app.services.recommender import RecommendationEngine
 
@@ -28,6 +36,25 @@ def _install_fake_google(monkeypatch, response_text: str) -> None:
             self.models = self
 
         def generate_content(self, model: str, contents: str) -> FakeResponse:  # noqa: ARG002
+            return FakeResponse(response_text)
+
+    google_module = ModuleType("google")
+    google_module.genai = SimpleNamespace(Client=FakeClient)
+    monkeypatch.setitem(sys.modules, "google", google_module)
+
+
+def _install_fake_google_with_model_capture(monkeypatch, response_text: str, captured_models: list[str]) -> None:
+    class FakeResponse:
+        def __init__(self, text: str) -> None:
+            self.text = text
+
+    class FakeClient:
+        def __init__(self, api_key: str) -> None:
+            self.api_key = api_key
+            self.models = self
+
+        def generate_content(self, model: str, contents: str) -> FakeResponse:  # noqa: ARG002
+            captured_models.append(model)
             return FakeResponse(response_text)
 
     google_module = ModuleType("google")
@@ -253,3 +280,73 @@ def test_mission_step_is_deterministic_and_does_not_call_gemini(monkeypatch) -> 
     assert "mission step analysis" in response.llm_analysis.reasoning_summary.lower()
     assert response.ui_enhanced.adaptation_summary
     assert response.ui_enhanced.algae_note
+
+
+def test_ai_service_routes_intro_and_deep_analysis_to_different_models(monkeypatch) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    captured_models: list[str] = []
+    _install_fake_google_with_model_capture(
+        monkeypatch,
+        '{"title": "AI insight", "summary": "Generated summary", "highlights": ["One", "Two"]}',
+        captured_models,
+    )
+    engine = RecommendationEngine(provider=JSONDataProvider())
+    baseline = engine.start_simulation(
+        SimulationStartRequest(
+            mission_profile=_build_mission(),
+            selected_crop="Lactuca sativa (Marul)",
+            selected_algae="Chlorella vulgaris",
+            selected_microbial="Saccharomyces boulardii",
+        )
+    )
+    service = AIService()
+    request = AIInsightRequest(
+        kind=AIInsightKind.SIMULATION_INTRO,
+        mission_profile=baseline.mission_profile,
+        selected_system=baseline.selected_system,
+        scores=baseline.scores,
+        explanations=baseline.explanations,
+        mission_state=baseline.mission_state,
+        ui_enhanced=baseline.ui_enhanced,
+        llm_analysis=baseline.llm_analysis,
+        mission_status=baseline.mission_status,
+    )
+
+    intro = service.generate_simulation_intro_explanation(request)
+    deep = service.generate_deep_analysis(request)
+
+    assert intro.generated_by_ai is True
+    assert deep.generated_by_ai is True
+    assert captured_models[0] == "gemini-2.5-flash"
+    assert captured_models[1] == "gemini-2.5-pro"
+
+
+def test_simulation_insight_endpoint_falls_back_cleanly_without_ai(monkeypatch) -> None:
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    bootstrap = RecommendationEngine(provider=JSONDataProvider()).start_simulation(
+        SimulationStartRequest(
+            mission_profile=_build_mission(),
+            selected_crop="Lactuca sativa (Marul)",
+            selected_algae="Chlorella vulgaris",
+            selected_microbial="Saccharomyces boulardii",
+        )
+    )
+
+    response = RecommendationEngine(provider=JSONDataProvider()).generate_ai_insight(
+        AIInsightRequest(
+            kind=AIInsightKind.SIMULATION_END,
+            mission_profile=bootstrap.mission_profile,
+            selected_system=bootstrap.selected_system,
+            scores=bootstrap.scores,
+            explanations=bootstrap.explanations,
+            mission_state=bootstrap.mission_state,
+            ui_enhanced=bootstrap.ui_enhanced,
+            llm_analysis=bootstrap.llm_analysis,
+            mission_status=bootstrap.mission_status,
+            adaptation_summary="Week 12: deterministic mission horizon completed cleanly.",
+        )
+    )
+
+    assert response.generated_by_ai is False
+    assert response.model_tier == "deterministic"
+    assert response.summary

@@ -1,10 +1,16 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import * as api from "@/lib/api";
 import { clearSimulationSession, saveSimulationSession } from "@/lib/simulation-session";
 import Simulation from "@/pages/Simulation";
 import type { SimulationStartResponse } from "@/lib/types";
+
+vi.mock("@/lib/api", () => ({
+  generateSimulationInsight: vi.fn(),
+  stepMission: vi.fn(),
+}));
 
 const session: SimulationStartResponse = {
   mission_profile: {
@@ -142,8 +148,36 @@ const session: SimulationStartResponse = {
 };
 
 describe("Simulation page", () => {
+  beforeEach(() => {
+    vi.mocked(api.generateSimulationInsight).mockResolvedValue({
+      kind: "simulation_intro",
+      title: "AI Insight",
+      summary: "AI intro summary",
+      highlights: ["Expected oxygen support remains stable."],
+      generated_by_ai: true,
+      model_tier: "flash",
+      model_name: "gemini-2.5-flash",
+    });
+    vi.mocked(api.stepMission).mockResolvedValue({
+      ...session,
+      mission_state: {
+        ...session.mission_state,
+        time: 1,
+      },
+      system_changes: [],
+      risk_delta: 0,
+      adaptation_summary: "Week 1 summary",
+      events: null,
+      request: {
+        mission_id: session.mission_state.mission_id,
+        time_step: 1,
+      },
+    } as never);
+  });
+
   afterEach(() => {
     clearSimulationSession();
+    vi.clearAllMocks();
   });
 
   it("shows an empty-state fallback when opened without a session", () => {
@@ -158,7 +192,7 @@ describe("Simulation page", () => {
     expect(screen.getByText(/No active simulation session was found\./i)).toBeInTheDocument();
   });
 
-  it("renders the selected ecosystem stack from router state", () => {
+  it("renders the selected ecosystem stack from router state", async () => {
     render(
       <MemoryRouter initialEntries={[{ pathname: "/simulation", state: { session } }]}>
         <Routes>
@@ -176,9 +210,11 @@ describe("Simulation page", () => {
     expect(screen.getByText(/Recovered Water:/i)).toBeInTheDocument();
     expect(screen.getByText(/photosynthesis/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Next Week/i })).toBeInTheDocument();
+    await waitFor(() => expect(api.generateSimulationInsight).toHaveBeenCalled());
+    expect(screen.getByText("AI Insight")).toBeInTheDocument();
   });
 
-  it("restores the latest simulation session from localStorage on refresh", () => {
+  it("restores the latest simulation session from localStorage on refresh", async () => {
     saveSimulationSession(session, null);
 
     render(
@@ -192,9 +228,11 @@ describe("Simulation page", () => {
     expect(screen.getByText("Lactuca Sativa (Marul)")).toBeInTheDocument();
     expect(screen.getByText("Deterministic Simulation")).toBeInTheDocument();
     expect(screen.getByText(/Planned Horizon:/i)).toBeInTheDocument();
+    await waitFor(() => expect(api.generateSimulationInsight).toHaveBeenCalled());
+    expect(screen.getByText("AI Insight")).toBeInTheDocument();
   });
 
-  it("shows a strong failure banner when the simulation reaches a critical state", () => {
+  it("shows a strong failure banner when the simulation reaches a critical state", async () => {
     const failedSession: SimulationStartResponse = {
       ...session,
       mission_status: "CRITICAL",
@@ -207,6 +245,15 @@ describe("Simulation page", () => {
         },
       },
     };
+    vi.mocked(api.generateSimulationInsight).mockResolvedValueOnce({
+      kind: "simulation_end",
+      title: "AI Outcome Insight",
+      summary: "AI end summary",
+      highlights: ["System risk exceeded safe limits."],
+      generated_by_ai: true,
+      model_tier: "flash",
+      model_name: "gemini-2.5-flash",
+    });
 
     render(
       <MemoryRouter initialEntries={[{ pathname: "/simulation", state: { session: failedSession } }]}>
@@ -220,9 +267,11 @@ describe("Simulation page", () => {
     expect(screen.getByText("System Failure")).toBeInTheDocument();
     expect(screen.getByText("Run Again")).toBeInTheDocument();
     expect(screen.getByText(/^Final Risk Level$/i)).toBeInTheDocument();
+    await waitFor(() => expect(api.generateSimulationInsight).toHaveBeenCalled());
+    expect(screen.getByText("AI Outcome Insight")).toBeInTheDocument();
   });
 
-  it("resets back to the initial simulation state when Run Again is selected", () => {
+  it("resets back to the initial simulation state when Run Again is selected", async () => {
     const failedSession: SimulationStartResponse = {
       ...session,
       mission_status: "CRITICAL",
@@ -272,5 +321,7 @@ describe("Simulation page", () => {
     expect(screen.getByText("Deterministic Simulation")).toBeInTheDocument();
     expect(screen.getByText(/Simulation Status: Running/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Next Week/i })).toBeInTheDocument();
+    await waitFor(() => expect(api.generateSimulationInsight).toHaveBeenCalled());
+    expect(screen.getByText("AI Insight")).toBeInTheDocument();
   });
 });

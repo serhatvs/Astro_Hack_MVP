@@ -15,6 +15,7 @@ from app.models.response import GeminiNarrative, LLMAnalysis, RecommendationResp
 from app.models.system import GrowingSystem
 from app.services.data_provider import DataProvider
 
+from .ai_service import AIService
 from .gemini_client import GeminiClient
 
 
@@ -29,11 +30,13 @@ class ReasoningLoop:
         provider: DataProvider,
         integration_engine: IntegrationEngine | None = None,
         gemini_client: GeminiClient | None = None,
+        ai_service: AIService | None = None,
         max_iterations: int = 2,
     ) -> None:
         self.provider = provider
         self.integration_engine = integration_engine or IntegrationEngine(provider)
         self.gemini_client = gemini_client or GeminiClient()
+        self.ai_service = ai_service or AIService(gemini_client=self.gemini_client)
         self.max_iterations = max_iterations
 
     def run(
@@ -243,22 +246,21 @@ class ReasoningLoop:
             logger.info("Gemini blocked for source=%s; using deterministic ui/debug narrative.", source)
             return fallback
 
-        gemini_narrative = self.gemini_client.analyze(
+        self.ai_service.gemini_client = self.gemini_client
+        gemini_narrative = self.ai_service.generate_recommendation_explanation(
             payload,
-            use_llm=llm_allowed,
-            fallback_ui=fallback.ui_layer.model_dump(mode="json"),
-            default_reasoning=fallback.debug_layer.reasoning_summary,
+            fallback=fallback,
+            use_ai=llm_allowed,
         )
-        if gemini_narrative is not None:
+        if gemini_narrative.debug_layer.reasoning_summary.endswith(" -gemini"):
             logger.info(
                 "Gemini narrative available for source=%s: %s",
                 source,
                 gemini_narrative.debug_layer.reasoning_summary,
             )
-            return gemini_narrative
-
-        logger.info("Using deterministic fallback llm/ui narrative for source=%s.", source)
-        return fallback
+        else:
+            logger.info("Using deterministic fallback llm/ui narrative for source=%s.", source)
+        return gemini_narrative
 
     def _build_llm_payload(
         self,

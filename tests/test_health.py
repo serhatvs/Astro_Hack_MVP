@@ -18,6 +18,7 @@ def test_root_endpoint_returns_service_overview() -> None:
             "/demo-cases",
             "/recommend",
             "/simulation/start",
+            "/simulation/insight",
             "/simulate",
             "/mission/step",
         ],

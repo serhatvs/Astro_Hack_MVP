@@ -29,6 +29,7 @@ from app.core.simulation import (
 )
 from app.engine.crop_engine import ALGAE_LIKE_NAMES
 from app.engine.integration_engine import IntegrationEngine
+from app.llm.ai_service import AIService
 from app.llm.reasoning_loop import ReasoningLoop
 from app.models.demo_case import DemoCase
 from app.models.mission import (
@@ -41,6 +42,9 @@ from app.models.mission import (
     downgrade_constraint,
 )
 from app.models.response import (
+    AIInsight,
+    AIInsightKind,
+    AIInsightRequest,
     CropRecommendation,
     DomainScoreBundle,
     DomainScoreVector,
@@ -80,13 +84,19 @@ class RecommendationEngine:
         resource_planner: ResourcePlanner | None = None,
         integration_engine: IntegrationEngine | None = None,
         reasoning_loop: ReasoningLoop | None = None,
+        ai_service: AIService | None = None,
         state_store: MissionStateStore | None = None,
     ) -> None:
         self.provider = provider
         self.explainer = explainer or Explainer()
         self.resource_planner = resource_planner or ResourcePlanner()
         self.integration_engine = integration_engine or IntegrationEngine(provider)
-        self.reasoning_loop = reasoning_loop or ReasoningLoop(provider, integration_engine=self.integration_engine)
+        self.ai_service = ai_service or AIService()
+        self.reasoning_loop = reasoning_loop or ReasoningLoop(
+            provider,
+            integration_engine=self.integration_engine,
+            ai_service=self.ai_service,
+        )
         self.state_store = state_store or MissionStateStore()
 
     def list_demo_cases(self) -> list[DemoCase]:
@@ -520,6 +530,19 @@ class RecommendationEngine:
             adaptation_summary=adaptation_summary,
             events=request.events,
             request=request,
+        )
+
+    def generate_ai_insight(self, request: AIInsightRequest) -> AIInsight:
+        """Generate low-frequency AI insight without touching deterministic simulation logic."""
+
+        if request.kind is AIInsightKind.SIMULATION_INTRO:
+            return self.ai_service.generate_simulation_intro_explanation(request, use_ai=True)
+        if request.kind is AIInsightKind.SIMULATION_END:
+            return self.ai_service.generate_simulation_end_explanation(request, use_ai=True)
+        return self.ai_service.generate_deep_analysis(
+            request,
+            use_ai=True,
+            premium=request.premium,
         )
 
     def _compose_recommendation_response(
