@@ -231,7 +231,7 @@ def test_ai_rerank_can_change_recommendation_selection() -> None:
     assert response.recommended_system == chosen_configuration["grow_system"]
 
 
-def test_invalid_ai_rerank_falls_back_to_deterministic_selection() -> None:
+def test_invalid_ai_rerank_metadata_keeps_baseline_but_counts_as_ai_review() -> None:
     engine = RecommendationEngine(provider=JSONDataProvider())
 
     class InvalidRerankGeminiClient:
@@ -272,8 +272,52 @@ def test_invalid_ai_rerank_falls_back_to_deterministic_selection() -> None:
     engine.reasoning_loop.gemini_client = InvalidRerankGeminiClient()  # type: ignore[assignment]
     response = engine.recommend(_build_mission())
 
-    assert response.ai_status.status == "fallback"
-    assert response.ai_status.reviewed is False
+    assert response.ai_status.status == "reviewed"
+    assert response.ai_status.reviewed is True
+    assert response.ai_status.selection_changed is False
+    assert response.selected_system.crop.name == baseline.selected_system.crop.name
+    assert response.selected_system.algae.name == baseline.selected_system.algae.name
+    assert response.selected_system.microbial.name == baseline.selected_system.microbial.name
+    assert response.recommended_system == baseline.recommended_system
+
+
+def test_missing_ai_rerank_metadata_still_counts_as_ai_review() -> None:
+    engine = RecommendationEngine(provider=JSONDataProvider())
+    baseline = RecommendationEngine(provider=JSONDataProvider()).recommend(_build_mission(), use_llm=False)
+
+    class MissingMetadataGeminiClient:
+        def analyze(self, payload, **kwargs):  # noqa: ARG002
+            return GeminiNarrative.from_payload(
+                {
+                    "ui_layer": {
+                        "crop_note": "AI crop note.",
+                        "algae_note": "AI algae note.",
+                        "microbial_note": "AI microbial note.",
+                        "executive_summary": "AI executive summary.",
+                        "adaptation_summary": "",
+                    },
+                    "debug_layer": {
+                        "reasoning_summary": "AI shortlisted review completed. -gemini",
+                        "second_pass": {},
+                    },
+                }
+            )
+
+        def generate_json(self, prompt, **kwargs):  # noqa: ARG002
+            return {
+                "crop_note": "AI crop note.",
+                "algae_note": "AI algae note.",
+                "microbial_note": "AI microbial note.",
+                "executive_summary": "AI executive summary.",
+                "adaptation_summary": "",
+            }
+
+    engine.reasoning_loop.gemini_client = MissingMetadataGeminiClient()  # type: ignore[assignment]
+    response = engine.recommend(_build_mission())
+
+    assert response.ai_status.status == "reviewed"
+    assert response.ai_status.reviewed is True
+    assert response.ai_status.selection_changed is False
     assert response.selected_system.crop.name == baseline.selected_system.crop.name
     assert response.selected_system.algae.name == baseline.selected_system.algae.name
     assert response.selected_system.microbial.name == baseline.selected_system.microbial.name

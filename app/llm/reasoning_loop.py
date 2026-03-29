@@ -600,33 +600,20 @@ class ReasoningLoop:
             for index, selection in enumerate(shortlist)
         }
         second_pass = narrative.debug_layer.second_pass or narrative.debug_layer.second_pass_decision
-        selected_candidate_id = str(second_pass.get("selected_candidate_id", "")).strip()
-
-        if selected_candidate_id not in shortlist_lookup:
-            updated_debug = narrative.debug_layer.model_copy(
-                update={
-                    "second_pass": {
-                        "decision": "retain",
-                        "rationale": "AI response omitted a valid shortlist candidate id, so the deterministic baseline remained active.",
-                        "selected_candidate_id": baseline_candidate_id,
-                        "selected_configuration": baseline_configuration,
-                    }
-                }
-            )
-            updated_debug.second_pass_decision = dict(updated_debug.second_pass)
-            fallback_narrative = narrative.model_copy(update={"debug_layer": updated_debug})
-            return baseline_selection, fallback_narrative, self._fallback_ai_status(
-                "AI rerank response was invalid. Deterministic shortlist result is being shown."
-            )
-
-        chosen_selection = shortlist_lookup[selected_candidate_id]
+        resolved_candidate_id, chosen_selection, resolution_message = self._resolve_shortlist_selection(
+            shortlist_lookup=shortlist_lookup,
+            second_pass=second_pass,
+            baseline_candidate_id=baseline_candidate_id,
+            baseline_selection=baseline_selection,
+        )
         selection_changed = self._selection_changed(baseline_selection, chosen_selection)
         updated_debug = narrative.debug_layer.model_copy(
             update={
                 "second_pass": {
                     **dict(second_pass),
                     "decision": "rerank" if selection_changed else "retain",
-                    "selected_candidate_id": selected_candidate_id,
+                    "rationale": str(second_pass.get("rationale") or resolution_message).strip(),
+                    "selected_candidate_id": resolved_candidate_id,
                     "selected_configuration": self._selected_configuration(
                         chosen_selection.result,
                         chosen_selection.grow_system.name,
@@ -640,6 +627,41 @@ class ReasoningLoop:
             chosen_selection,
             updated_narrative,
             self._successful_ai_status(selection_changed),
+        )
+
+    def _resolve_shortlist_selection(
+        self,
+        *,
+        shortlist_lookup: Mapping[str, IntegratedSelection],
+        second_pass: Mapping[str, Any],
+        baseline_candidate_id: str,
+        baseline_selection: IntegratedSelection,
+    ) -> tuple[str, IntegratedSelection, str]:
+        selected_candidate_id = str(second_pass.get("selected_candidate_id", "")).strip()
+        if selected_candidate_id in shortlist_lookup:
+            return (
+                selected_candidate_id,
+                shortlist_lookup[selected_candidate_id],
+                "AI review selected a valid shortlist candidate.",
+            )
+
+        selected_configuration = second_pass.get("selected_configuration")
+        if isinstance(selected_configuration, Mapping):
+            normalized_selected = self._normalize_selection_config(selected_configuration)
+            for candidate_id, selection in shortlist_lookup.items():
+                if normalized_selected == self._normalize_selection_config(
+                    self._selected_configuration(selection.result, selection.grow_system.name)
+                ):
+                    return (
+                        candidate_id,
+                        selection,
+                        "AI review matched a shortlisted configuration and kept that candidate.",
+                    )
+
+        return (
+            baseline_candidate_id,
+            baseline_selection,
+            "AI review completed but did not nominate a valid shortlist candidate, so the deterministic baseline remained active.",
         )
 
     def _disabled_ai_status(self, source: str) -> AIStatus:
@@ -688,6 +710,16 @@ class ReasoningLoop:
 
     def _selection_id(self, index: int) -> str:
         return f"candidate_{index + 1}"
+
+    def _normalize_selection_config(
+        self,
+        configuration: Mapping[str, Any],
+    ) -> dict[str, str]:
+        normalized: dict[str, str] = {}
+        for key in ("crop", "algae", "microbial", "grow_system"):
+            value = configuration.get(key)
+            normalized[key] = str(value).strip().lower() if value is not None else ""
+        return normalized
 
     def _build_shortlist_payload(
         self,
