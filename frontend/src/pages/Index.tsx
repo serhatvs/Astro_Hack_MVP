@@ -116,50 +116,46 @@ const Index = () => {
   return (
     <div className="min-h-screen w-full overflow-x-hidden bg-background p-3">
       <div className="mx-auto flex min-h-[calc(100vh-1.5rem)] w-full max-w-[1800px] flex-col gap-3">
-        <div className="glass-panel overflow-hidden p-3">
-          <div className="mb-4 space-y-4">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="flex min-w-0 items-center gap-3">
-                <div className="flex min-w-0 items-center gap-2">
-                  <div className="h-2 w-2 rounded-full bg-neon-green blink" />
-                  <h1 className="truncate text-sm font-bold font-mono uppercase tracking-widest neon-text-cyan">
-                    {t("app_title")}
-                  </h1>
-                </div>
-                <span className="rounded border border-glass-border px-1.5 py-0.5 text-[9px] font-mono text-muted-foreground">
-                  v1.1
-                </span>
+        <div className="glass-panel overflow-hidden p-4">
+          <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex min-w-0 items-center gap-2">
+                <div className="h-2 w-2 rounded-full bg-neon-green blink" />
+                <h1 className="truncate text-sm font-bold font-mono uppercase tracking-widest neon-text-cyan">
+                  {t("app_title")}
+                </h1>
               </div>
-              <div className="flex w-full justify-end lg:w-auto">
+              <span className="rounded border border-glass-border px-1.5 py-0.5 text-[9px] font-mono text-muted-foreground">
+                v1.1
+              </span>
+            </div>
+
+            <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-start sm:justify-end lg:w-auto">
+              <div className="order-2 sm:order-1 w-full sm:w-[320px] lg:w-[300px]">
+                <LiveTelemetry />
+              </div>
+              <div className="order-1 flex justify-end sm:order-2 sm:self-start">
                 <LanguageToggle />
               </div>
             </div>
-
-            <div className="hidden lg:flex lg:justify-end">
-              <div className="w-full max-w-[280px] shrink-0">
-                <LiveTelemetry />
-              </div>
-            </div>
           </div>
 
-          <div className="relative z-10">
-            <MissionInput
-              environment={environment}
-              setEnvironment={setEnvironment}
-              duration={duration}
-              setDuration={setDuration}
-              waterConstraint={waterConstraint}
-              setWaterConstraint={setWaterConstraint}
-              energyConstraint={energyConstraint}
-              setEnergyConstraint={setEnergyConstraint}
-              areaConstraint={areaConstraint}
-              setAreaConstraint={setAreaConstraint}
-              goal={goal}
-              setGoal={setGoal}
-              onGenerate={handleGenerate}
-              isLoading={isGenerating}
-            />
-          </div>
+          <MissionInput
+            environment={environment}
+            setEnvironment={setEnvironment}
+            duration={duration}
+            setDuration={setDuration}
+            waterConstraint={waterConstraint}
+            setWaterConstraint={setWaterConstraint}
+            energyConstraint={energyConstraint}
+            setEnergyConstraint={setEnergyConstraint}
+            areaConstraint={areaConstraint}
+            setAreaConstraint={setAreaConstraint}
+            goal={goal}
+            setGoal={setGoal}
+            onGenerate={handleGenerate}
+            isLoading={isGenerating}
+          />
 
           {error && (
             <div className="mt-3 rounded border border-neon-red/40 bg-neon-red/10 px-3 py-2">

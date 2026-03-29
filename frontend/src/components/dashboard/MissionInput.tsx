@@ -134,11 +134,11 @@ const MissionInput = ({
         {t("constraint_helper")}
       </p>
 
-      <div className="mt-3 flex justify-end border-t border-glass-border/60 pt-3">
+      <div className="mt-4 border-t border-glass-border/60 pt-4">
         <Button
           onClick={onGenerate}
           disabled={isLoading}
-          className="h-9 w-full sm:w-auto sm:min-w-[220px] bg-primary text-primary-foreground font-bold text-sm uppercase tracking-wider pulse-glow hover:bg-primary/90 transition-all"
+          className="h-10 w-full bg-primary text-primary-foreground font-bold text-sm uppercase tracking-wider pulse-glow hover:bg-primary/90 transition-all"
         >
           {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : t("generate_plan")}
         </Button>
