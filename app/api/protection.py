@@ -101,7 +101,7 @@ class RequestProtection:
         if isinstance(auth_subject, str) and auth_subject.strip():
             return auth_subject.strip()
 
-        session_id = request.headers.get("x-session-id") or request.cookies.get("session_id")
+        session_id = request.headers.get("x-session-id")
         if session_id:
             return f"session:{session_id.strip()}"
 

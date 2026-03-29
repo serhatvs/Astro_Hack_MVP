@@ -6,4 +6,3 @@ htmlcov/
 venv/
 *.pyc
 run/
-data/users.json

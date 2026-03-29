@@ -15,7 +15,8 @@ from app.services.recommender import get_default_engine
 
 @pytest.fixture(autouse=True)
 def reset_runtime_state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("AUTH_USER_STORE_PATH", str(tmp_path / "users.json"))
+    database_path = (tmp_path / "auth.sqlite3").as_posix()
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{database_path}")
     request_protection.reset()
     get_auth_service.cache_clear()
     get_default_engine.cache_clear()

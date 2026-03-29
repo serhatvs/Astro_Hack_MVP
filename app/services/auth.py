@@ -1,21 +1,21 @@
-"""Minimal auth service with JSON-backed users and in-memory sessions."""
+"""Database-backed MVP auth service with persistent sessions."""
 
 from __future__ import annotations
 
 import base64
 import hashlib
 import hmac
-import json
 import logging
 import os
 import secrets
-from dataclasses import dataclass
+import sqlite3
+from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
-from pathlib import Path
 from threading import Lock
+from urllib.parse import unquote, urlparse
 
-from app.models.auth import AuthUser, StoredUser
+from app.models.auth import AuthUser, StoredSession, StoredUser
 
 
 logger = logging.getLogger(__name__)
@@ -34,13 +34,363 @@ class AccountExistsError(AuthError):
     """Raised when a user already exists."""
 
 
-@dataclass(frozen=True)
-class SessionRecord:
-    """Active authenticated session."""
+class DatabaseAuthStore:
+    """Minimal auth persistence layer backed by Postgres in deploys."""
 
-    session_id: str
-    user_id: str
-    expires_at: datetime
+    def __init__(self, database_url: str) -> None:
+        normalized_url = database_url.strip()
+        if not normalized_url:
+            raise RuntimeError("DATABASE_URL is required for auth persistence.")
+
+        self.database_url = normalized_url
+        self.backend = "sqlite" if normalized_url.startswith("sqlite") else "postgresql"
+        self._schema_lock = Lock()
+        self._schema_ready = False
+
+    def initialize(self) -> None:
+        """Create auth tables if they do not already exist."""
+
+        if self._schema_ready:
+            return
+
+        with self._schema_lock:
+            if self._schema_ready:
+                return
+
+            if self.backend == "sqlite":
+                with self._sqlite_connection() as connection:
+                    connection.executescript(
+                        """
+                        CREATE TABLE IF NOT EXISTS users (
+                            id TEXT PRIMARY KEY,
+                            email TEXT NOT NULL UNIQUE,
+                            password_hash TEXT NOT NULL,
+                            created_at TEXT NOT NULL,
+                            is_active INTEGER NOT NULL DEFAULT 1
+                        );
+
+                        CREATE TABLE IF NOT EXISTS sessions (
+                            id TEXT PRIMARY KEY,
+                            user_id TEXT NOT NULL,
+                            session_token TEXT NOT NULL UNIQUE,
+                            created_at TEXT NOT NULL,
+                            expires_at TEXT NOT NULL,
+                            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                        );
+
+                        CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(session_token);
+                        CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
+                        """
+                    )
+            else:
+                with self._postgres_connection() as connection:
+                    with connection.cursor() as cursor:
+                        cursor.execute(
+                            """
+                            CREATE TABLE IF NOT EXISTS users (
+                                id TEXT PRIMARY KEY,
+                                email TEXT NOT NULL UNIQUE,
+                                password_hash TEXT NOT NULL,
+                                created_at TIMESTAMPTZ NOT NULL,
+                                is_active BOOLEAN NOT NULL DEFAULT TRUE
+                            );
+                            """
+                        )
+                        cursor.execute(
+                            """
+                            CREATE TABLE IF NOT EXISTS sessions (
+                                id TEXT PRIMARY KEY,
+                                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                                session_token TEXT NOT NULL UNIQUE,
+                                created_at TIMESTAMPTZ NOT NULL,
+                                expires_at TIMESTAMPTZ NOT NULL
+                            );
+                            """
+                        )
+                        cursor.execute(
+                            "CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(session_token);"
+                        )
+                        cursor.execute(
+                            "CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);"
+                        )
+
+            self._schema_ready = True
+            logger.info("Auth schema ensured on %s backend.", self.backend)
+
+    def get_user_by_email(self, email: str) -> StoredUser | None:
+        """Return a user for the given normalized email."""
+
+        self.initialize()
+        normalized_email = email.strip().lower()
+        row = self._fetchone(
+            postgres_sql=(
+                "SELECT id, email, password_hash, created_at, is_active "
+                "FROM users WHERE email = %s"
+            ),
+            sqlite_sql=(
+                "SELECT id, email, password_hash, created_at, is_active "
+                "FROM users WHERE email = ?"
+            ),
+            params=(normalized_email,),
+        )
+        return StoredUser.model_validate(row) if row is not None else None
+
+    def get_user_by_id(self, user_id: str) -> StoredUser | None:
+        """Return a user by id."""
+
+        self.initialize()
+        row = self._fetchone(
+            postgres_sql=(
+                "SELECT id, email, password_hash, created_at, is_active "
+                "FROM users WHERE id = %s"
+            ),
+            sqlite_sql=(
+                "SELECT id, email, password_hash, created_at, is_active "
+                "FROM users WHERE id = ?"
+            ),
+            params=(user_id,),
+        )
+        return StoredUser.model_validate(row) if row is not None else None
+
+    def create_user(self, *, email: str, password_hash: str) -> StoredUser:
+        """Insert a new user into the auth database."""
+
+        self.initialize()
+        normalized_email = email.strip().lower()
+        created_at = datetime.now(timezone.utc)
+        user_id = secrets.token_urlsafe(16)
+
+        if self.backend == "sqlite":
+            with self._sqlite_connection() as connection:
+                cursor = connection.execute(
+                    """
+                    INSERT OR IGNORE INTO users (id, email, password_hash, created_at, is_active)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (user_id, normalized_email, password_hash, created_at.isoformat(), 1),
+                )
+                if cursor.rowcount == 0:
+                    raise AccountExistsError(normalized_email)
+                row = connection.execute(
+                    """
+                    SELECT id, email, password_hash, created_at, is_active
+                    FROM users
+                    WHERE id = ?
+                    """,
+                    (user_id,),
+                ).fetchone()
+        else:
+            with self._postgres_connection() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        INSERT INTO users (id, email, password_hash, created_at, is_active)
+                        VALUES (%s, %s, %s, %s, %s)
+                        ON CONFLICT(email) DO NOTHING
+                        RETURNING id, email, password_hash, created_at, is_active
+                        """,
+                        (user_id, normalized_email, password_hash, created_at, True),
+                    )
+                    row = cursor.fetchone()
+            if row is None:
+                raise AccountExistsError(normalized_email)
+
+        if row is None:
+            raise RuntimeError("Failed to persist auth user.")
+
+        logger.info("Auth register succeeded for %s.", normalized_email)
+        return StoredUser.model_validate(self._normalize_row(row))
+
+    def create_session(self, user_id: str, *, ttl_hours: int = SESSION_TTL_HOURS) -> StoredSession:
+        """Create and persist a new login session."""
+
+        self.initialize()
+        self.delete_expired_sessions()
+        created_at = datetime.now(timezone.utc)
+        expires_at = created_at + timedelta(hours=ttl_hours)
+        session_id = secrets.token_urlsafe(16)
+        session_token = secrets.token_urlsafe(32)
+
+        if self.backend == "sqlite":
+            with self._sqlite_connection() as connection:
+                connection.execute(
+                    """
+                    INSERT INTO sessions (id, user_id, session_token, created_at, expires_at)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        session_id,
+                        user_id,
+                        session_token,
+                        created_at.isoformat(),
+                        expires_at.isoformat(),
+                    ),
+                )
+                row = connection.execute(
+                    """
+                    SELECT id, user_id, session_token, created_at, expires_at
+                    FROM sessions
+                    WHERE id = ?
+                    """,
+                    (session_id,),
+                ).fetchone()
+        else:
+            with self._postgres_connection() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        INSERT INTO sessions (id, user_id, session_token, created_at, expires_at)
+                        VALUES (%s, %s, %s, %s, %s)
+                        RETURNING id, user_id, session_token, created_at, expires_at
+                        """,
+                        (session_id, user_id, session_token, created_at, expires_at),
+                    )
+                    row = cursor.fetchone()
+
+        if row is None:
+            raise RuntimeError("Failed to persist auth session.")
+
+        return StoredSession.model_validate(self._normalize_row(row))
+
+    def get_session(self, session_token: str | None) -> tuple[StoredSession | None, str]:
+        """Return a session by token and report whether it is valid, missing, or expired."""
+
+        if not session_token:
+            return None, "missing"
+
+        self.initialize()
+        row = self._fetchone(
+            postgres_sql=(
+                "SELECT id, user_id, session_token, created_at, expires_at "
+                "FROM sessions WHERE session_token = %s"
+            ),
+            sqlite_sql=(
+                "SELECT id, user_id, session_token, created_at, expires_at "
+                "FROM sessions WHERE session_token = ?"
+            ),
+            params=(session_token,),
+        )
+        if row is None:
+            return None, "missing"
+
+        session = StoredSession.model_validate(row)
+        if session.expires_at <= datetime.now(timezone.utc):
+            self.delete_session(session_token)
+            return None, "expired"
+        return session, "ok"
+
+    def delete_session(self, session_token: str | None) -> None:
+        """Delete a session token from the auth database."""
+
+        if not session_token:
+            return
+
+        self.initialize()
+        self._execute(
+            postgres_sql="DELETE FROM sessions WHERE session_token = %s",
+            sqlite_sql="DELETE FROM sessions WHERE session_token = ?",
+            params=(session_token,),
+        )
+
+    def delete_expired_sessions(self) -> None:
+        """Remove expired sessions to keep the table tidy."""
+
+        self.initialize()
+        now = datetime.now(timezone.utc)
+        sqlite_timestamp = now.isoformat()
+        self._execute(
+            postgres_sql="DELETE FROM sessions WHERE expires_at <= %s",
+            sqlite_sql="DELETE FROM sessions WHERE expires_at <= ?",
+            params=(now if self.backend == "postgresql" else sqlite_timestamp,),
+        )
+
+    def reset(self) -> None:
+        """Clear auth tables. Used by tests."""
+
+        self.initialize()
+        if self.backend == "sqlite":
+            with self._sqlite_connection() as connection:
+                connection.execute("DELETE FROM sessions")
+                connection.execute("DELETE FROM users")
+        else:
+            with self._postgres_connection() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute("DELETE FROM sessions")
+                    cursor.execute("DELETE FROM users")
+
+    def _fetchone(
+        self,
+        *,
+        postgres_sql: str,
+        sqlite_sql: str,
+        params: tuple[object, ...],
+    ) -> dict[str, object] | None:
+        if self.backend == "sqlite":
+            with self._sqlite_connection() as connection:
+                row = connection.execute(sqlite_sql, params).fetchone()
+        else:
+            with self._postgres_connection() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(postgres_sql, params)
+                    row = cursor.fetchone()
+
+        return self._normalize_row(row) if row is not None else None
+
+    def _execute(
+        self,
+        *,
+        postgres_sql: str,
+        sqlite_sql: str,
+        params: tuple[object, ...],
+    ) -> None:
+        if self.backend == "sqlite":
+            with self._sqlite_connection() as connection:
+                connection.execute(sqlite_sql, params)
+            return
+
+        with self._postgres_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(postgres_sql, params)
+
+    def _normalize_row(self, row: sqlite3.Row | Mapping[str, object] | None) -> dict[str, object] | None:
+        if row is None:
+            return None
+
+        normalized = dict(row)
+        if "is_active" in normalized:
+            normalized["is_active"] = bool(normalized["is_active"])
+        return normalized
+
+    def _sqlite_connection(self) -> sqlite3.Connection:
+        path = self._sqlite_path_from_url(self.database_url)
+        connection = sqlite3.connect(path)
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
+        return connection
+
+    def _postgres_connection(self):  # type: ignore[no-untyped-def]
+        try:
+            import psycopg
+            from psycopg.rows import dict_row
+        except ImportError as exc:  # pragma: no cover - depends on deploy environment
+            raise RuntimeError("psycopg is required for PostgreSQL auth persistence.") from exc
+
+        return psycopg.connect(self.database_url, row_factory=dict_row)
+
+    def _sqlite_path_from_url(self, database_url: str) -> str:
+        parsed = urlparse(database_url)
+        raw_path = unquote(parsed.path or "")
+
+        if raw_path == "/:memory:":
+            return ":memory:"
+
+        if raw_path.startswith("/") and len(raw_path) >= 3 and raw_path[2] == ":":
+            return raw_path[1:]
+
+        if raw_path:
+            return raw_path
+
+        raise RuntimeError("sqlite DATABASE_URL must include a database path.")
 
 
 def hash_password(password: str) -> str:
@@ -81,182 +431,27 @@ def verify_password(password: str, password_hash: str) -> bool:
     return hmac.compare_digest(candidate_digest, expected_digest)
 
 
-class JSONUserStore:
-    """Very small JSON user store for MVP auth."""
-
-    def __init__(self, path: Path) -> None:
-        self.path = path
-        self._lock = Lock()
-
-    def list_users(self) -> list[StoredUser]:
-        """Load all users from disk."""
-
-        with self._lock:
-            if not self.path.exists():
-                return []
-
-            try:
-                payload = json.loads(self.path.read_text(encoding="utf-8"))
-            except json.JSONDecodeError:
-                logger.exception("Failed to parse auth user store at %s.", self.path)
-                return []
-
-        if not isinstance(payload, list):
-            logger.warning("Unexpected auth user store shape at %s; falling back to an empty list.", self.path)
-            return []
-
-        users: list[StoredUser] = []
-        for item in payload:
-            if not isinstance(item, dict):
-                continue
-            users.append(StoredUser.model_validate(item))
-        return users
-
-    def get_by_email(self, email: str) -> StoredUser | None:
-        """Look up a user by normalized email."""
-
-        normalized = email.strip().lower()
-        for user in self.list_users():
-            if user.email == normalized:
-                return user
-        return None
-
-    def get_by_id(self, user_id: str) -> StoredUser | None:
-        """Look up a user by id."""
-
-        for user in self.list_users():
-            if user.id == user_id:
-                return user
-        return None
-
-    def create_user(self, *, email: str, password_hash: str) -> StoredUser:
-        """Create and persist a new user."""
-
-        normalized = email.strip().lower()
-
-        with self._lock:
-            users = self._load_users_unlocked()
-            if any(user.email == normalized for user in users):
-                raise AccountExistsError(normalized)
-
-            user = StoredUser(
-                id=secrets.token_urlsafe(16),
-                email=normalized,
-                password_hash=password_hash,
-            )
-            users.append(user)
-            self._write_users_unlocked(users)
-            logger.info("Auth register succeeded for %s.", normalized)
-            return user
-
-    def _load_users_unlocked(self) -> list[StoredUser]:
-        if not self.path.exists():
-            return []
-
-        try:
-            payload = json.loads(self.path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            logger.exception("Failed to parse auth user store at %s.", self.path)
-            return []
-
-        if not isinstance(payload, list):
-            logger.warning("Unexpected auth user store shape at %s; falling back to an empty list.", self.path)
-            return []
-
-        users: list[StoredUser] = []
-        for item in payload:
-            if not isinstance(item, dict):
-                continue
-            users.append(StoredUser.model_validate(item))
-        return users
-
-    def _write_users_unlocked(self, users: list[StoredUser]) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        temp_path = self.path.with_suffix(f"{self.path.suffix}.tmp")
-        serialized = [user.model_dump(mode="json") for user in users]
-        temp_path.write_text(json.dumps(serialized, ensure_ascii=True, indent=2), encoding="utf-8")
-        temp_path.replace(self.path)
-
-
-class InMemorySessionStore:
-    """Server-side session store."""
-
-    def __init__(self, ttl_hours: int = SESSION_TTL_HOURS) -> None:
-        self.ttl_hours = ttl_hours
-        self._lock = Lock()
-        self._sessions: dict[str, SessionRecord] = {}
-
-    def create(self, user_id: str) -> SessionRecord:
-        """Create a new server-side session."""
-
-        now = datetime.now(timezone.utc)
-        record = SessionRecord(
-            session_id=secrets.token_urlsafe(32),
-            user_id=user_id,
-            expires_at=now + timedelta(hours=self.ttl_hours),
-        )
-        with self._lock:
-            self._sessions[record.session_id] = record
-            self._prune_expired_unlocked(now)
-        return record
-
-    def get(self, session_id: str) -> tuple[SessionRecord | None, str]:
-        """Resolve a session by id."""
-
-        if not session_id:
-            return None, "missing"
-
-        now = datetime.now(timezone.utc)
-        with self._lock:
-            record = self._sessions.get(session_id)
-            if record is None:
-                return None, "missing"
-            if record.expires_at <= now:
-                self._sessions.pop(session_id, None)
-                return None, "expired"
-            return record, "ok"
-
-    def delete(self, session_id: str | None) -> None:
-        """Invalidate a session."""
-
-        if not session_id:
-            return
-        with self._lock:
-            self._sessions.pop(session_id, None)
-
-    def reset(self) -> None:
-        """Clear all sessions. Used in tests."""
-
-        with self._lock:
-            self._sessions.clear()
-
-    def _prune_expired_unlocked(self, now: datetime) -> None:
-        expired = [key for key, value in self._sessions.items() if value.expires_at <= now]
-        for key in expired:
-            self._sessions.pop(key, None)
-
-
 class AuthService:
-    """MVP authentication service with cookie-backed sessions."""
+    """Small auth service built on a persistent database store."""
 
-    def __init__(
-        self,
-        user_store: JSONUserStore,
-        session_store: InMemorySessionStore | None = None,
-    ) -> None:
-        self.user_store = user_store
-        self.session_store = session_store or InMemorySessionStore()
+    def __init__(self, store: DatabaseAuthStore) -> None:
+        self.store = store
+
+    def initialize(self) -> None:
+        """Ensure auth tables exist before serving auth operations."""
+
+        self.store.initialize()
 
     def register(self, email: str, password: str) -> StoredUser:
         """Create a user account."""
 
-        return self.user_store.create_user(email=email, password_hash=hash_password(password))
+        return self.store.create_user(email=email, password_hash=hash_password(password))
 
     def authenticate(self, email: str, password: str) -> StoredUser | None:
         """Validate credentials and return the user when valid."""
 
         normalized = email.strip().lower()
-        user = self.user_store.get_by_email(normalized)
+        user = self.store.get_user_by_email(normalized)
         if user is None or not user.is_active:
             logger.warning("Auth login failed for %s.", normalized)
             return None
@@ -266,29 +461,29 @@ class AuthService:
         logger.info("Auth login succeeded for %s.", normalized)
         return user
 
-    def create_session(self, user_id: str) -> SessionRecord:
-        """Create a new session for the given user."""
+    def create_session(self, user_id: str) -> StoredSession:
+        """Create a new persistent session for the given user."""
 
-        return self.session_store.create(user_id)
+        return self.store.create_session(user_id)
 
-    def revoke_session(self, session_id: str | None) -> None:
+    def revoke_session(self, session_token: str | None) -> None:
         """Invalidate a session."""
 
-        self.session_store.delete(session_id)
+        self.store.delete_session(session_token)
 
-    def resolve_user_from_session(self, session_id: str | None) -> tuple[StoredUser | None, str]:
-        """Resolve the current authenticated user from a session id."""
+    def resolve_user_from_session(self, session_token: str | None) -> tuple[StoredUser | None, str]:
+        """Resolve the current authenticated user from a session token."""
 
-        if not session_id:
+        if not session_token:
             return None, "missing"
 
-        record, status = self.session_store.get(session_id)
-        if record is None:
+        session, status = self.store.get_session(session_token)
+        if session is None:
             return None, status
 
-        user = self.user_store.get_by_id(record.user_id)
+        user = self.store.get_user_by_id(session.user_id)
         if user is None or not user.is_active:
-            self.session_store.delete(record.session_id)
+            self.store.delete_session(session.session_token)
             return None, "missing"
 
         return user, "ok"
@@ -299,14 +494,16 @@ class AuthService:
         return AuthUser.model_validate(user)
 
     def reset(self) -> None:
-        """Reset in-memory auth state used by tests."""
+        """Reset auth state used by tests."""
 
-        self.session_store.reset()
+        self.store.reset()
 
 
 @lru_cache
 def get_auth_service() -> AuthService:
     """Return the shared auth service instance."""
 
-    configured_path = os.getenv("AUTH_USER_STORE_PATH", "data/users.json").strip() or "data/users.json"
-    return AuthService(user_store=JSONUserStore(Path(configured_path)))
+    database_url = os.getenv("DATABASE_URL", "").strip()
+    service = AuthService(store=DatabaseAuthStore(database_url))
+    service.initialize()
+    return service

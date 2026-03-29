@@ -37,10 +37,10 @@ def _cookie_secure(request: Request) -> bool:
     return host not in LOCAL_AUTH_HOSTS
 
 
-def _set_session_cookie(response: Response, request: Request, session_id: str) -> None:
+def _set_session_cookie(response: Response, request: Request, session_token: str) -> None:
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
-        value=session_id,
+        value=session_token,
         httponly=True,
         samesite="lax",
         secure=_cookie_secure(request),
@@ -58,22 +58,27 @@ def clear_session_cookie(response: Response) -> None:
     )
 
 
-def _session_id_from_request(request: Request) -> str | None:
-    raw_session_id = request.cookies.get(SESSION_COOKIE_NAME)
-    if raw_session_id is None:
+def _session_token_from_request(request: Request) -> str | None:
+    raw_session_token = request.cookies.get(SESSION_COOKIE_NAME)
+    if raw_session_token is None:
         return None
-    normalized = raw_session_id.strip()
+    normalized = raw_session_token.strip()
     return normalized or None
 
 
 def get_optional_current_user(
     request: Request,
-    auth_service: AuthService = Depends(get_auth_service),
 ) -> AuthUser | None:
     """Resolve the current user when a valid session exists."""
 
-    session_id = _session_id_from_request(request)
-    user, state = auth_service.resolve_user_from_session(session_id)
+    session_token = _session_token_from_request(request)
+    if session_token is None:
+        request.state.auth_session_state = "missing"
+        request.state.auth_subject = None
+        return None
+
+    auth_service = get_auth_service()
+    user, state = auth_service.resolve_user_from_session(session_token)
     request.state.auth_session_state = state
 
     if user is None:
@@ -125,7 +130,7 @@ def register(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=ACCOUNT_EXISTS_MESSAGE) from exc
 
     session = auth_service.create_session(user.id)
-    _set_session_cookie(response, request, session.session_id)
+    _set_session_cookie(response, request, session.session_token)
     return AuthSessionResponse(user=auth_service.to_public_user(user))
 
 
@@ -147,7 +152,7 @@ def login(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=INVALID_CREDENTIALS_MESSAGE)
 
     session = auth_service.create_session(user.id)
-    _set_session_cookie(response, request, session.session_id)
+    _set_session_cookie(response, request, session.session_token)
     return AuthSessionResponse(user=auth_service.to_public_user(user))
 
 
@@ -159,8 +164,8 @@ def logout(
 ) -> AuthLogoutResponse:
     """Invalidate the current session and clear the auth cookie."""
 
-    session_id = _session_id_from_request(request)
-    auth_service.revoke_session(session_id)
+    session_token = _session_token_from_request(request)
+    auth_service.revoke_session(session_token)
     clear_session_cookie(response)
     logger.info("Auth logout completed.")
     return AuthLogoutResponse(success=True)

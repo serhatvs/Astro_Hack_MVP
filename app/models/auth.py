@@ -70,7 +70,7 @@ class AuthLogoutResponse(BaseModel):
 
 
 class StoredUser(BaseModel):
-    """Persistent user representation stored on disk."""
+    """Persistent user representation stored in the auth database."""
 
     id: str
     email: str
@@ -82,3 +82,13 @@ class StoredUser(BaseModel):
     @classmethod
     def validate_email(cls, value: str) -> str:
         return _normalize_email(value)
+
+
+class StoredSession(BaseModel):
+    """Persistent session representation stored in the auth database."""
+
+    id: str
+    user_id: str
+    session_token: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    expires_at: datetime
