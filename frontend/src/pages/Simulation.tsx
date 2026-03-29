@@ -3,7 +3,6 @@ import { ArrowDownRight, ArrowLeft, ArrowRight, ArrowUpRight, FlaskConical, Load
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
-import LanguageToggle from "@/components/LanguageToggle";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { stepMission } from "@/lib/api";
@@ -484,6 +483,38 @@ const Simulation = () => {
     event: entry.event,
     summary: entry.summary,
   }));
+  const headerFacts = [
+    {
+      label: t("environment"),
+      value: t(`environment_${missionState.environment}`),
+      valueClass: "text-foreground",
+    },
+    {
+      label: t("mission_duration"),
+      value: t(`duration_${missionState.duration}`),
+      valueClass: "text-foreground",
+    },
+    {
+      label: t("current_week"),
+      value: `${missionState.time} / ${maxWeeks}`,
+      valueClass: "text-foreground",
+    },
+    {
+      label: t("planned_horizon"),
+      value: `${maxWeeks} ${t("weeks_unit")}`,
+      valueClass: "text-foreground",
+    },
+    {
+      label: t("mode"),
+      value: t("deterministic_simulation"),
+      valueClass: "text-neon-green",
+    },
+    {
+      label: t("plant_system"),
+      value: formatLabel(cropLayer?.supportSystem || t("unknown")),
+      valueClass: "text-neon-cyan",
+    },
+  ];
 
   const metricCards = [
     {
@@ -698,9 +729,15 @@ const Simulation = () => {
 
       <div className="mx-auto flex min-h-[calc(100vh-1.5rem)] w-full max-w-[1800px] flex-col gap-3">
         <div className="glass-panel overflow-hidden p-4">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="space-y-2">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div className="min-w-0 flex-1 space-y-4">
               <div className="flex flex-wrap items-center gap-2">
+                <Button asChild variant="outline" className="h-9 border-glass-border bg-muted/20 text-foreground hover:bg-muted/35">
+                  <Link to="/">
+                    <ArrowLeft className="mr-2 h-4 w-4" />
+                    {t("back_to_mission_planner")}
+                  </Link>
+                </Button>
                 <div className="h-2 w-2 rounded-full bg-neon-cyan blink" />
                 <h1 className="text-sm font-bold font-mono uppercase tracking-[0.28em] neon-text-cyan">
                   {t("mission_validation_simulation")}
@@ -712,41 +749,38 @@ const Simulation = () => {
                   {t("simulation_status")}: {simulationStatus === "failure" ? t("system_failure") : simulationStatus === "complete" ? t("simulation_complete") : t("running")}
                 </span>
               </div>
-                <p className="max-w-4xl text-sm text-foreground/80">
-                  {executiveSummary || t("validation_session_active")}
-                </p>
-              <div className="flex flex-wrap gap-3 text-[11px] font-mono text-muted-foreground">
-                <span>{t("environment")}: <span className="text-foreground">{t(`environment_${missionState.environment}`)}</span></span>
-                <span>{t("mission_duration")}: <span className="text-foreground">{t(`duration_${missionState.duration}`)}</span></span>
-                <span>{t("planned_horizon")}: <span className="text-foreground">{maxWeeks} {t("weeks_unit")}</span></span>
-                <span>{t("goal")}: <span className="text-foreground">{t(`goal_${missionState.goal}`)}</span></span>
-                <span>{t("current_week")}: <span className="text-foreground">{missionState.time} / {maxWeeks}</span></span>
-                <span>{t("last_weekly_event")}: <span className="text-foreground">{lastEventFeedback}</span></span>
-                <span>
-                  {t("mode")}: <span className="text-neon-green">{t("deterministic_simulation")}</span>
-                </span>
-                <span>
-                  {t("plant_system")}:{" "}
-                  <span className="text-neon-cyan">
-                    {formatLabel(cropLayer?.supportSystem || t("unknown"))}
-                  </span>
-                </span>
+
+              <p className="max-w-4xl text-sm text-foreground/80">
+                {executiveSummary || t("validation_session_active")}
+              </p>
+
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
+                {headerFacts.map((item) => (
+                  <div key={item.label} className="rounded-lg border border-glass-border bg-muted/10 px-3 py-2">
+                    <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">{item.label}:</p>
+                    <p className={`mt-1 text-sm font-mono ${item.valueClass}`}>{item.value}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="rounded-lg border border-glass-border bg-muted/10 px-3 py-2 text-xs">
+                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">{t("last_weekly_event")}</p>
+                <p className="mt-1 text-foreground/85">{lastEventFeedback}</p>
               </div>
             </div>
 
-              <div className="flex shrink-0 items-start gap-2">
-                <LanguageToggle />
-                <div className="rounded-lg border border-neon-orange/25 bg-neon-orange/5 px-3 py-2 text-right">
-                  <p className="text-[9px] font-mono uppercase tracking-wider text-neon-orange">{t("operational_note")}</p>
-                  <p className="mt-1 max-w-sm text-xs leading-relaxed text-foreground/75">{session.operational_note}</p>
-                </div>
-                <Button asChild variant="outline" className="border-glass-border bg-muted/20 text-foreground hover:bg-muted/35">
-                  <Link to="/">
-                    <ArrowLeft className="h-4 w-4" />
-                    {t("back_to_mission_planner")}
-                  </Link>
-                </Button>
+            <div className="w-full shrink-0 xl:max-w-sm">
+              <div className="rounded-lg border border-neon-orange/25 bg-neon-orange/5 px-3 py-3">
+                <p className="text-[9px] font-mono uppercase tracking-wider text-neon-orange">{t("operational_note")}</p>
+                <p className="mt-2 text-xs leading-relaxed text-foreground/75">
+                  {session.operational_note}
+                </p>
+                <p className="mt-3 text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+                  {t("goal")}
+                </p>
+                <p className="mt-1 text-xs text-foreground/80">{t(`goal_${missionState.goal}`)}</p>
               </div>
+            </div>
           </div>
         </div>
 

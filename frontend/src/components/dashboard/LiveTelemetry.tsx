@@ -20,11 +20,11 @@ const LiveTelemetry = () => {
   const radiation = radiationElevated ? t("telemetry_elevated") : t("telemetry_nominal");
 
   return (
-    <div className="glass-panel min-w-0 overflow-hidden p-3 space-y-2">
-      <h3 className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
+    <div className="glass-panel min-w-0 overflow-hidden bg-muted/10 p-2.5 space-y-1.5">
+      <h3 className="text-[9px] font-mono uppercase tracking-[0.22em] text-muted-foreground/80">
         {t("telemetry_title")}
       </h3>
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+      <div className="grid grid-cols-3 gap-2.5">
         <TelemetryItem label={t("telemetry_temp")} value={`${temp} C`} />
         <TelemetryItem label={t("telemetry_rad")} value={radiation} alert={radiationElevated} />
         <TelemetryItem label={t("telemetry_pressure")} value={`${pressure} kPa`} />
@@ -35,8 +35,8 @@ const LiveTelemetry = () => {
 
 const TelemetryItem = ({ label, value, alert = false }: { label: string; value: string; alert?: boolean }) => (
   <div className="text-center">
-    <p className="text-[9px] font-mono uppercase text-muted-foreground tracking-wider">{label}</p>
-    <p className={`text-sm font-mono font-bold ${alert ? "text-neon-orange" : "neon-text-cyan"}`}>{value}</p>
+    <p className="text-[8px] font-mono uppercase text-muted-foreground/75 tracking-[0.18em]">{label}</p>
+    <p className={`text-xs font-mono font-semibold ${alert ? "text-neon-orange" : "neon-text-cyan"}`}>{value}</p>
   </div>
 );
 

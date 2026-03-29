@@ -134,7 +134,7 @@ const MissionInput = ({
         {t("constraint_helper")}
       </p>
 
-      <div className="mt-2 flex justify-center sm:justify-end">
+      <div className="mt-3 flex justify-end border-t border-glass-border/60 pt-3">
         <Button
           onClick={onGenerate}
           disabled={isLoading}

@@ -117,7 +117,7 @@ const Index = () => {
     <div className="min-h-screen w-full overflow-x-hidden bg-background p-3">
       <div className="mx-auto flex min-h-[calc(100vh-1.5rem)] w-full max-w-[1800px] flex-col gap-3">
         <div className="glass-panel overflow-hidden p-3">
-          <div className="mb-3 space-y-3">
+          <div className="mb-4 space-y-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="flex min-w-0 items-center gap-3">
                 <div className="flex min-w-0 items-center gap-2">
@@ -136,7 +136,7 @@ const Index = () => {
             </div>
 
             <div className="hidden lg:flex lg:justify-end">
-              <div className="w-full max-w-sm shrink-0">
+              <div className="w-full max-w-[280px] shrink-0">
                 <LiveTelemetry />
               </div>
             </div>
