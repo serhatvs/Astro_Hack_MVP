@@ -2,14 +2,19 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { ApiError } from "@/lib/api";
 import * as api from "@/lib/api";
 import { clearSimulationSession, saveSimulationSession } from "@/lib/simulation-session";
 import Simulation from "@/pages/Simulation";
 import type { SimulationStartResponse } from "@/lib/types";
 
-vi.mock("@/lib/api", () => ({
-  stepMission: vi.fn(),
-}));
+vi.mock("@/lib/api", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
+  return {
+    ...actual,
+    stepMission: vi.fn(),
+  };
+});
 
 const session: SimulationStartResponse = {
   mission_profile: {
@@ -218,6 +223,25 @@ describe("Simulation page", () => {
     expect(screen.getByText("Deterministic Simulation")).toBeInTheDocument();
     expect(screen.getByText(/Planned Horizon:/i)).toBeInTheDocument();
     expect(screen.getByText("Validation Brief")).toBeInTheDocument();
+  });
+
+  it("falls back safely when the backend no longer has the simulation state", async () => {
+    vi.mocked(api.stepMission).mockRejectedValue(
+      new ApiError("Simulation not initialized", 404, "/mission/step", "simulation_state"),
+    );
+
+    render(
+      <MemoryRouter initialEntries={[{ pathname: "/simulation", state: { session } }]}>
+        <Routes>
+          <Route path="/simulation" element={<Simulation />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Next Week/i }));
+
+    expect(await screen.findByRole("heading", { name: "Simulation not initialized" })).toBeInTheDocument();
+    expect(screen.getAllByText("Simulation not initialized").length).toBeGreaterThan(1);
   });
 
   it("shows a strong failure banner when the simulation reaches a critical state", async () => {

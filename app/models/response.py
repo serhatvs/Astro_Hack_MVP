@@ -355,12 +355,12 @@ class RiskDelta(StrEnum):
 class SimulationStartRequest(BaseModel):
     """Request body for launching a custom ecosystem simulation session."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     mission_profile: MissionProfile
-    selected_crop: str
-    selected_algae: str
-    selected_microbial: str
+    selected_crop: str = Field(min_length=1)
+    selected_algae: str = Field(min_length=1)
+    selected_microbial: str = Field(min_length=1)
 
 
 class SimulationStartResponse(BaseModel):

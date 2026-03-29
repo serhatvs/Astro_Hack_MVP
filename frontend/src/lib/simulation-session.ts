@@ -10,13 +10,41 @@ interface StoredSimulationSession {
 
 const STORAGE_KEY = "astro-hack:simulation-session";
 
+const hasMissionStateShape = (value: unknown): value is SimulationSession["mission_state"] => {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.mission_id === "string" &&
+    candidate.mission_id.trim().length > 0 &&
+    typeof candidate.time === "number" &&
+    typeof candidate.max_weeks === "number" &&
+    candidate.resources !== null &&
+    candidate.system_metrics !== null
+  );
+};
+
 const hasSessionShape = (value: unknown): value is SimulationSession => {
   if (!value || typeof value !== "object") {
     return false;
   }
   const candidate = value as Record<string, unknown>;
-  return Boolean(candidate.mission_state && candidate.selected_system && candidate.ranked_candidates);
+  return Boolean(
+    hasMissionStateShape(candidate.mission_state) &&
+      candidate.selected_system &&
+      candidate.ranked_candidates,
+  );
 };
+
+export const isSimulationSessionTerminal = (value: SimulationSession | null | undefined): boolean =>
+  Boolean(
+    value &&
+      value.mission_state &&
+      (value.mission_state.end_reason ||
+        value.mission_state.time >= value.mission_state.max_weeks),
+  );
 
 export const loadSimulationSession = (): StoredSimulationSession | null => {
   if (typeof window === "undefined") {
@@ -79,4 +107,12 @@ export const clearSimulationSession = (): void => {
   }
 
   window.localStorage.removeItem(STORAGE_KEY);
+};
+
+export const loadActiveSimulationSession = (): StoredSimulationSession | null => {
+  const stored = loadSimulationSession();
+  if (!stored || isSimulationSessionTerminal(stored.current)) {
+    return null;
+  }
+  return stored;
 };

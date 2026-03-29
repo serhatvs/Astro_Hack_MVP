@@ -8,6 +8,11 @@ from functools import lru_cache
 
 from fastapi import HTTPException
 
+from app.api.errors import (
+    INVALID_INPUT_MESSAGE,
+    SIMULATION_ALREADY_ENDED_MESSAGE,
+    SIMULATION_NOT_INITIALIZED_MESSAGE,
+)
 from app.core.mission_state import (
     ActiveDomainItem,
     ActiveSystemState,
@@ -189,7 +194,7 @@ class RecommendationEngine:
                 )
             )
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+            raise HTTPException(status_code=400, detail=INVALID_INPUT_MESSAGE) from exc
 
         provisional_explanations = self._build_reasoning_context_explanations(
             mission=request.mission_profile,
@@ -407,7 +412,9 @@ class RecommendationEngine:
     def mission_step(self, request: MissionStepRequest) -> MissionStepResponse:
         state = self.state_store.get(request.mission_id)
         if state is None:
-            raise HTTPException(status_code=404, detail=f"Mission '{request.mission_id}' was not found.")
+            raise HTTPException(status_code=404, detail=SIMULATION_NOT_INITIALIZED_MESSAGE)
+        if state.end_reason is not None or state.time >= state.max_weeks:
+            raise HTTPException(status_code=409, detail=SIMULATION_ALREADY_ENDED_MESSAGE)
 
         previous_state = state.model_copy(deep=True)
         updated_state = self._apply_weekly_resource_flow(state, request.time_step, request.events)

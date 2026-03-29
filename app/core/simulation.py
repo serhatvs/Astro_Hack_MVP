@@ -34,9 +34,9 @@ class MissionEvents(BaseModel):
 class MissionStepRequest(BaseModel):
     """Stateful weekly mission-step request."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
-    mission_id: str
+    mission_id: str = Field(min_length=1)
     time_step: int = Field(default=SIMULATION_STEP_WEEKS, gt=0, le=SIMULATION_MAX_REQUEST_STEP)
     events: MissionEvents | None = None
 

@@ -599,7 +599,7 @@ def test_simulation_start_rejects_invalid_selected_names(monkeypatch) -> None:
     )
 
     assert response.status_code == 400
-    assert "not compatible" in response.json()["detail"].lower() or "not found" in response.json()["detail"].lower()
+    assert response.json()["detail"] == "Invalid input"
 
 
 def test_mission_step_updates_stored_state(monkeypatch) -> None:

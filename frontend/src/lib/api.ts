@@ -15,6 +15,48 @@ const BASE_URL =
   "http://localhost:8000";
 
 const SESSION_STORAGE_KEY = "astro-hack-session-id";
+const INVALID_INPUT_MESSAGE = "Invalid input";
+const SIMULATION_NOT_INITIALIZED_MESSAGE = "Simulation not initialized";
+const SIMULATION_ALREADY_ENDED_MESSAGE = "Simulation already ended";
+const GENERIC_RETRY_MESSAGE = "Something went wrong, please retry";
+
+type ApiErrorKind = "invalid_input" | "simulation_state" | "rate_limit" | "generic";
+
+export class ApiError extends Error {
+  status: number;
+  path: string;
+  kind: ApiErrorKind;
+
+  constructor(message: string, status: number, path: string, kind: ApiErrorKind) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.path = path;
+    this.kind = kind;
+  }
+}
+
+export const isApiError = (error: unknown): error is ApiError => error instanceof ApiError;
+
+export const isSimulationStateError = (error: unknown): error is ApiError =>
+  isApiError(error) && error.kind === "simulation_state";
+
+const isSimulationPath = (path: string) => path.startsWith("/simulation") || path.startsWith("/mission");
+
+const buildSafeApiError = (path: string, status: number, detail: string | null) => {
+  if (status === 429 && detail) {
+    return new ApiError(detail, status, path, "rate_limit");
+  }
+  if (status === 400 || status === 422) {
+    return new ApiError(INVALID_INPUT_MESSAGE, status, path, "invalid_input");
+  }
+  if (isSimulationPath(path) && (status === 404 || status === 409)) {
+    const message =
+      detail === SIMULATION_ALREADY_ENDED_MESSAGE ? SIMULATION_ALREADY_ENDED_MESSAGE : SIMULATION_NOT_INITIALIZED_MESSAGE;
+    return new ApiError(message, status, path, "simulation_state");
+  }
+  return new ApiError(GENERIC_RETRY_MESSAGE, status, path, "generic");
+};
 
 function getSessionId(): string | null {
   if (typeof window === "undefined") {
@@ -35,29 +77,40 @@ function getSessionId(): string | null {
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const sessionId = getSessionId();
-  const response = await fetch(`${BASE_URL}${path}`, {
-    headers: {
-      "Content-Type": "application/json",
-      ...(sessionId ? { "X-Session-ID": sessionId } : {}),
-      ...(options?.headers || {}),
-    },
-    ...options,
-  });
+  let response: Response;
+
+  try {
+    response = await fetch(`${BASE_URL}${path}`, {
+      headers: {
+        "Content-Type": "application/json",
+        ...(sessionId ? { "X-Session-ID": sessionId } : {}),
+        ...(options?.headers || {}),
+      },
+      ...options,
+    });
+  } catch {
+    throw new ApiError(GENERIC_RETRY_MESSAGE, 0, path, "generic");
+  }
 
   if (!response.ok) {
-    let message = `Request failed with status ${response.status}`;
+    let detail: string | null = null;
 
     try {
       const errorBody = await response.json();
-      message = errorBody.detail || errorBody.message || message;
+      detail =
+        typeof errorBody.detail === "string"
+          ? errorBody.detail
+          : typeof errorBody.message === "string"
+            ? errorBody.message
+            : null;
     } catch {
-      const fallbackMessage = await response.text();
+      const fallbackMessage = (await response.text()).trim();
       if (fallbackMessage) {
-        message = fallbackMessage;
+        detail = fallbackMessage;
       }
     }
 
-    throw new Error(message);
+    throw buildSafeApiError(path, response.status, detail);
   }
 
   return (await response.json()) as T;

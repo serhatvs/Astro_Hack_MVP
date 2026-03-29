@@ -7,10 +7,15 @@ import MissionInput from "@/components/dashboard/MissionInput";
 import LiveTelemetry from "@/components/dashboard/LiveTelemetry";
 import LanguageToggle from "@/components/LanguageToggle";
 import SimulationLauncher from "@/components/dashboard/SimulationLauncher";
-import { recommendMission, startSimulation } from "@/lib/api";
+import { isApiError, recommendMission, startSimulation } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import { buildLayerSummaries, formatLabel, getExecutiveSummary, isGeminiUsed } from "@/lib/mission-view";
-import { saveSimulationSession } from "@/lib/simulation-session";
+import {
+  clearSimulationSession,
+  isSimulationSessionTerminal,
+  loadActiveSimulationSession,
+  saveSimulationSession,
+} from "@/lib/simulation-session";
 import type {
   BackendGoal,
   ConstraintLevel,
@@ -26,6 +31,55 @@ const goalMap: Record<UiGoal, BackendGoal> = {
   calorie: "calorie_max",
   water: "water_efficiency",
   low_maintenance: "low_maintenance",
+};
+
+const INVALID_INPUT_MESSAGE = "Invalid input";
+const SIMULATION_NOT_INITIALIZED_MESSAGE = "Simulation not initialized";
+const SIMULATION_ALREADY_ENDED_MESSAGE = "Simulation already ended";
+const SIMULATION_ALREADY_RUNNING_MESSAGE = "Simulation already running";
+const GENERIC_RETRY_MESSAGE = "Something went wrong, please retry";
+
+const validEnvironments = new Set<Environment>(["mars", "moon", "iss"]);
+const validDurations = new Set<Duration>(["short", "medium", "long"]);
+const validConstraints = new Set<ConstraintLevel>(["low", "medium", "high"]);
+const validGoals = new Set<BackendGoal>(["balanced", "calorie_max", "water_efficiency", "low_maintenance"]);
+
+const isValidMissionPayload = (payload: MissionPayload) =>
+  validEnvironments.has(payload.environment) &&
+  validDurations.has(payload.duration) &&
+  validGoals.has(payload.goal) &&
+  validConstraints.has(payload.constraints.water) &&
+  validConstraints.has(payload.constraints.energy) &&
+  validConstraints.has(payload.constraints.area);
+
+const hasLaunchableRecommendation = (
+  recommendation: RecommendationResponse | null,
+): recommendation is RecommendationResponse & {
+  mission_profile: MissionPayload;
+  selected_system: NonNullable<RecommendationResponse["selected_system"]>;
+} =>
+  Boolean(
+    recommendation?.mission_profile &&
+      recommendation.selected_system?.crop?.name &&
+      recommendation.selected_system?.algae?.name &&
+      recommendation.selected_system?.microbial?.name &&
+      recommendation.ranked_candidates?.crop?.length &&
+      recommendation.ranked_candidates?.algae?.length &&
+      recommendation.ranked_candidates?.microbial?.length,
+  );
+
+const resolveUserFacingMessage = (error: unknown, fallback: string) => {
+  if (isApiError(error)) {
+    if (
+      error.message === INVALID_INPUT_MESSAGE ||
+      error.message === SIMULATION_NOT_INITIALIZED_MESSAGE ||
+      error.message === SIMULATION_ALREADY_ENDED_MESSAGE
+    ) {
+      return error.message;
+    }
+    return error.message || fallback;
+  }
+  return fallback;
 };
 
 const Index = () => {
@@ -61,12 +115,18 @@ const Index = () => {
 
   const handleGenerate = async () => {
     const missionPayload = buildMissionPayload();
+    if (!isValidMissionPayload(missionPayload)) {
+      setError(INVALID_INPUT_MESSAGE);
+      toast.error(INVALID_INPUT_MESSAGE);
+      return;
+    }
 
     setError(null);
     setIsGenerating(true);
 
     try {
       const response = await recommendMission(missionPayload);
+      clearSimulationSession();
       setRecommendation(response);
       const leadLabel =
         response.selected_system?.crop?.name ||
@@ -77,7 +137,7 @@ const Index = () => {
         description: t("mission_plan_generated_desc", { stack: formatLabel(leadLabel) }),
       });
     } catch (requestError) {
-      const message = requestError instanceof Error ? requestError.message : t("unable_to_reach_backend");
+      const message = resolveUserFacingMessage(requestError, GENERIC_RETRY_MESSAGE);
       setError(message);
       toast.error(t("recommendation_failed"), { description: message });
     } finally {
@@ -90,10 +150,28 @@ const Index = () => {
     selected_algae: string;
     selected_microbial: string;
   }) => {
-    if (!currentRecommendation) {
+    if (isStartingSimulation) {
+      return;
+    }
+
+    if (!hasLaunchableRecommendation(currentRecommendation)) {
       toast.error(t("generate_plan_first"), {
-        description: t("simulation_start_requires_plan"),
+        description: INVALID_INPUT_MESSAGE,
       });
+      return;
+    }
+
+    const activeSession = loadActiveSimulationSession();
+    if (activeSession && !isSimulationSessionTerminal(activeSession.current)) {
+      toast.error(SIMULATION_ALREADY_RUNNING_MESSAGE, {
+        description: t("validation_session_active"),
+      });
+      navigate("/simulation", { state: { session: activeSession.current } });
+      return;
+    }
+
+    if (!selection.selected_crop || !selection.selected_algae || !selection.selected_microbial) {
+      toast.error(INVALID_INPUT_MESSAGE);
       return;
     }
 
@@ -106,7 +184,7 @@ const Index = () => {
       saveSimulationSession(session, null);
       navigate("/simulation", { state: { session } });
     } catch (requestError) {
-      const message = requestError instanceof Error ? requestError.message : t("unable_to_start_simulation");
+      const message = resolveUserFacingMessage(requestError, GENERIC_RETRY_MESSAGE);
       toast.error(t("simulation_launch_failed"), { description: message });
     } finally {
       setIsStartingSimulation(false);

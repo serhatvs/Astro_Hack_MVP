@@ -5,10 +5,15 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { stepMission } from "@/lib/api";
+import { isSimulationStateError, stepMission } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import { buildLayerSummaries, formatLabel, getExecutiveSummary } from "@/lib/mission-view";
-import { loadSimulationSession, saveSimulationSession, type SimulationSession } from "@/lib/simulation-session";
+import {
+  clearSimulationSession,
+  loadSimulationSession,
+  saveSimulationSession,
+  type SimulationSession,
+} from "@/lib/simulation-session";
 import type { MissionEventsPayload, MissionStatus } from "@/lib/types";
 
 interface SimulationRouteState {
@@ -34,6 +39,10 @@ const durationWeekTargets = {
   long: 48,
 } as const;
 const WEEKLY_STEP = 1;
+const INVALID_INPUT_MESSAGE = "Invalid input";
+const SIMULATION_NOT_INITIALIZED_MESSAGE = "Simulation not initialized";
+const SIMULATION_ALREADY_ENDED_MESSAGE = "Simulation already ended";
+const GENERIC_RETRY_MESSAGE = "Something went wrong, please retry";
 
 const formatPercentish = (value?: number | null) => {
   if (typeof value !== "number" || Number.isNaN(value)) {
@@ -77,6 +86,15 @@ const parseOptionalNumber = (value: string): number | undefined => {
   }
   const parsed = Number(trimmed);
   return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+const isPercentInputValid = (value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return true;
+  }
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) && parsed >= 0 && parsed <= 100;
 };
 
 const hasSimulationSessionShape = (value: unknown): value is SimulationSession => {
@@ -329,6 +347,7 @@ const Simulation = () => {
   const [yieldDrop, setYieldDrop] = useState("");
   const [isApplyingStep, setIsApplyingStep] = useState(false);
   const [showUpdateHighlight, setShowUpdateHighlight] = useState(false);
+  const [sessionMessage, setSessionMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (!session) {
@@ -352,9 +371,9 @@ const Simulation = () => {
         <div className="mx-auto flex min-h-[calc(100vh-1.5rem)] max-w-[1200px] items-center justify-center">
           <div className="glass-panel flex w-full max-w-2xl flex-col gap-4 overflow-hidden p-6 text-center">
             <div className="space-y-2">
-              <h1 className="text-lg font-bold tracking-wide neon-text-cyan">{t("mission_validation_simulation")}</h1>
+              <h1 className="text-lg font-bold tracking-wide neon-text-cyan">{SIMULATION_NOT_INITIALIZED_MESSAGE}</h1>
               <p className="text-sm text-muted-foreground">
-                {t("no_active_simulation")}
+                {sessionMessage || t("no_active_simulation")}
               </p>
             </div>
             <div className="flex justify-center">
@@ -568,6 +587,31 @@ const Simulation = () => {
     : [];
 
   const handleApplyStep = async () => {
+    if (!session || !missionState.mission_id) {
+      setSessionMessage(SIMULATION_NOT_INITIALIZED_MESSAGE);
+      clearSimulationSession();
+      setPreviousSession(null);
+      setInitialSession(null);
+      setSession(null);
+      toast.error(SIMULATION_NOT_INITIALIZED_MESSAGE);
+      return;
+    }
+
+    if (simulationStatus !== "running") {
+      toast.error(SIMULATION_ALREADY_ENDED_MESSAGE);
+      return;
+    }
+
+    if (
+      !isPercentInputValid(waterDrop) ||
+      !isPercentInputValid(energyDrop) ||
+      !isPercentInputValid(contamination) ||
+      !isPercentInputValid(yieldDrop)
+    ) {
+      toast.error(INVALID_INPUT_MESSAGE);
+      return;
+    }
+
     const parsedWater = parseOptionalNumber(waterDrop);
     const parsedEnergy = parseOptionalNumber(energyDrop);
     const parsedContamination = parseOptionalNumber(contamination);
@@ -607,7 +651,14 @@ const Simulation = () => {
         description: `${buildEventFeedback(Object.keys(events).length > 0 ? events : null, t)} ${response.adaptation_summary}`,
       });
     } catch (requestError) {
-      const message = requestError instanceof Error ? requestError.message : t("unable_to_advance_simulation");
+      const message = requestError instanceof Error ? requestError.message : GENERIC_RETRY_MESSAGE;
+      if (isSimulationStateError(requestError)) {
+        clearSimulationSession();
+        setSessionMessage(SIMULATION_NOT_INITIALIZED_MESSAGE);
+        setPreviousSession(null);
+        setInitialSession(null);
+        setSession(null);
+      }
       toast.error(t("simulation_step_failed"), { description: message });
     } finally {
       setIsApplyingStep(false);
