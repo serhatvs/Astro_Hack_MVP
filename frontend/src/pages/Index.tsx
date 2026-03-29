@@ -5,6 +5,7 @@ import { toast } from "sonner";
 
 import AuthPanel from "@/components/auth/AuthPanel";
 import MissionInput from "@/components/dashboard/MissionInput";
+import RecommendationStackAccordion from "@/components/dashboard/RecommendationStackAccordion";
 import LiveTelemetry from "@/components/dashboard/LiveTelemetry";
 import LanguageToggle from "@/components/LanguageToggle";
 import SimulationLauncher from "@/components/dashboard/SimulationLauncher";
@@ -358,23 +359,10 @@ const Index = () => {
                 <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
                   {t("recommended_validation_stack")}
                 </p>
-                <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
-                  {layerSummaries.length > 0 ? (
-                    layerSummaries.map((layer) => (
-                      <div key={layer.type} className="rounded border border-glass-border/70 bg-muted/10 px-3 py-2">
-                        <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
-                          {t(`${layer.type}_layer`)}
-                        </p>
-                        <p className="mt-1 text-sm font-semibold text-foreground">{formatLabel(layer.name)}</p>
-                        <p className="mt-1 text-xs text-foreground/75">{layer.summary}</p>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-xs text-muted-foreground">
-                      {t("recommendation_missing_stack")}
-                    </p>
-                  )}
-                </div>
+                <RecommendationStackAccordion
+                  layers={layerSummaries}
+                  emptyMessage={t("recommendation_missing_stack")}
+                />
               </div>
 
               <div className="rounded-lg border border-neon-orange/25 bg-neon-orange/5 p-3">
