@@ -61,7 +61,9 @@ export const getExecutiveSummary = (
   response?.explanations?.executive_summary ||
   "";
 
-export const buildLayerSummaries = (source?: SelectedSystemLike | null): LayerSummary[] => {
+type Translator = (key: string, values?: Record<string, string | number>) => string;
+
+export const buildLayerSummaries = (source?: SelectedSystemLike | null, t?: Translator): LayerSummary[] => {
   if (!source?.selected_system) {
     return [];
   }
@@ -74,12 +76,17 @@ export const buildLayerSummaries = (source?: SelectedSystemLike | null): LayerSu
     const summary =
       uiSummary ||
       (noteSummary ? `${noteSummary}${noteSummary.endsWith(".") ? "" : "."}` : "") ||
-      `${formatLabel(selected?.name || type)} remains active in the ${domainLabels[type].toLowerCase()}.`;
+      (t
+        ? t("layer_summary_fallback", {
+            name: formatLabel(selected?.name || type),
+            layer: t(`${type}_layer`).toLowerCase(),
+          })
+        : `${formatLabel(selected?.name || type)} remains active in the ${domainLabels[type].toLowerCase()}.`);
     const rankIndex = ranked.findIndex((candidate) => candidate.name === selected?.name);
 
     return {
       type,
-      label: domainLabels[type],
+      label: t ? t(`${type}_layer`) : domainLabels[type],
       accentClass: domainAccentClasses[type],
       name: selected?.name || formatLabel(type),
       summary,

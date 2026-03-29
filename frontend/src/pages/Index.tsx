@@ -5,8 +5,10 @@ import { toast } from "sonner";
 
 import MissionInput from "@/components/dashboard/MissionInput";
 import LiveTelemetry from "@/components/dashboard/LiveTelemetry";
+import LanguageToggle from "@/components/LanguageToggle";
 import SimulationLauncher from "@/components/dashboard/SimulationLauncher";
 import { recommendMission, startSimulation } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
 import { buildLayerSummaries, formatLabel, getExecutiveSummary, isGeminiUsed } from "@/lib/mission-view";
 import { saveSimulationSession } from "@/lib/simulation-session";
 import type {
@@ -27,6 +29,7 @@ const goalMap: Record<UiGoal, BackendGoal> = {
 };
 
 const Index = () => {
+  const { t } = useI18n();
   const navigate = useNavigate();
   const [environment, setEnvironment] = useState<Environment>("mars");
   const [duration, setDuration] = useState<Duration>("long");
@@ -52,7 +55,7 @@ const Index = () => {
 
   const currentRecommendation = recommendation;
   const geminiUsed = isGeminiUsed(currentRecommendation?.llm_analysis?.reasoning_summary);
-  const layerSummaries = buildLayerSummaries(currentRecommendation);
+  const layerSummaries = buildLayerSummaries(currentRecommendation, t);
   const executiveSummary = getExecutiveSummary(currentRecommendation);
   const hasRecommendation = Boolean(currentRecommendation);
 
@@ -68,15 +71,15 @@ const Index = () => {
       const leadLabel =
         response.selected_system?.crop?.name ||
         response.top_crops?.[0]?.name ||
-        "the selected stack";
+        t("launch_stack").toLowerCase();
 
-      toast.success("Mission plan generated", {
-        description: `${formatLabel(leadLabel)} is ready for the selected mission profile.`,
+      toast.success(t("mission_plan_generated"), {
+        description: t("mission_plan_generated_desc", { stack: formatLabel(leadLabel) }),
       });
     } catch (requestError) {
-      const message = requestError instanceof Error ? requestError.message : "Unable to reach the backend.";
+      const message = requestError instanceof Error ? requestError.message : t("unable_to_reach_backend");
       setError(message);
-      toast.error("Recommendation failed", { description: message });
+      toast.error(t("recommendation_failed"), { description: message });
     } finally {
       setIsGenerating(false);
     }
@@ -88,8 +91,8 @@ const Index = () => {
     selected_microbial: string;
   }) => {
     if (!currentRecommendation) {
-      toast.error("Generate a mission plan first", {
-        description: "A simulation needs the current mission recommendation and candidate lists as its starting point.",
+      toast.error(t("generate_plan_first"), {
+        description: t("simulation_start_requires_plan"),
       });
       return;
     }
@@ -103,8 +106,8 @@ const Index = () => {
       saveSimulationSession(session, null);
       navigate("/simulation", { state: { session } });
     } catch (requestError) {
-      const message = requestError instanceof Error ? requestError.message : "Unable to start the ecosystem simulation.";
-      toast.error("Simulation launch failed", { description: message });
+      const message = requestError instanceof Error ? requestError.message : t("unable_to_start_simulation");
+      toast.error(t("simulation_launch_failed"), { description: message });
     } finally {
       setIsStartingSimulation(false);
     }
@@ -119,15 +122,18 @@ const Index = () => {
               <div className="flex min-w-0 items-center gap-2">
                 <div className="h-2 w-2 rounded-full bg-neon-green blink" />
                 <h1 className="truncate text-sm font-bold font-mono uppercase tracking-widest neon-text-cyan">
-                  TUA Astro-Tarim Mission Planner
+                  {t("app_title")}
                 </h1>
               </div>
               <span className="rounded border border-glass-border px-1.5 py-0.5 text-[9px] font-mono text-muted-foreground">
                 v1.1
               </span>
             </div>
-            <div className="hidden w-full max-w-sm shrink-0 lg:block">
-              <LiveTelemetry />
+            <div className="flex w-full items-center justify-end gap-3 lg:w-auto">
+              <LanguageToggle />
+              <div className="hidden w-full max-w-sm shrink-0 lg:block">
+                <LiveTelemetry />
+              </div>
             </div>
           </div>
 
@@ -150,7 +156,7 @@ const Index = () => {
 
           {error && (
             <div className="mt-3 rounded border border-neon-red/40 bg-neon-red/10 px-3 py-2">
-              <p className="break-words text-xs font-mono text-neon-red">Backend error: {error}</p>
+              <p className="break-words text-xs font-mono text-neon-red">{t("backend_error")}: {error}</p>
             </div>
           )}
         </div>
@@ -160,10 +166,10 @@ const Index = () => {
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="space-y-1">
                 <h2 className="text-[10px] font-mono uppercase tracking-[0.24em] text-muted-foreground">
-                  Mission Summary
+                  {t("mission_summary")}
                 </h2>
                 <p className="max-w-4xl text-sm text-foreground/80">
-                  {executiveSummary || "Recommendation prepared. Review the mission summary, then launch a validation run if needed."}
+                  {executiveSummary || t("recommendation_prepared")}
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono text-muted-foreground">
@@ -174,19 +180,19 @@ const Index = () => {
                       : "border-glass-border bg-muted/20 text-muted-foreground"
                   }`}
                 >
-                  AI Insight
+                  {t("ai_insight")}
                 </span>
                 <span className={geminiUsed ? "text-neon-cyan" : "text-muted-foreground"}>
-                  {geminiUsed ? "Enabled" : "Fallback"}
+                  {geminiUsed ? t("enabled") : t("fallback")}
                 </span>
                 <span>
-                  Integrated score:{" "}
+                  {t("integrated_score")}:{" "}
                   <span className="text-neon-cyan">
-                    {currentRecommendation.scores?.integrated?.toFixed(2) ?? "N/A"}
+                    {currentRecommendation.scores?.integrated?.toFixed(2) ?? t("n_a")}
                   </span>
                 </span>
                 <span>
-                  Plant system:{" "}
+                  {t("plant_system")}:{" "}
                   <span className="text-neon-cyan">
                     {formatLabel(currentRecommendation.recommended_system).toUpperCase()}
                   </span>
@@ -197,14 +203,14 @@ const Index = () => {
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1.3fr_0.7fr]">
               <div className="rounded-lg border border-glass-border bg-black/10 p-3">
                 <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
-                  Recommended Validation Stack
+                  {t("recommended_validation_stack")}
                 </p>
                 <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
                   {layerSummaries.length > 0 ? (
                     layerSummaries.map((layer) => (
                       <div key={layer.type} className="rounded border border-glass-border/70 bg-muted/10 px-3 py-2">
                         <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
-                          {layer.label}
+                          {t(`${layer.type}_layer`)}
                         </p>
                         <p className="mt-1 text-sm font-semibold text-foreground">{formatLabel(layer.name)}</p>
                         <p className="mt-1 text-xs text-foreground/75">{layer.summary}</p>
@@ -212,18 +218,16 @@ const Index = () => {
                     ))
                   ) : (
                     <p className="text-xs text-muted-foreground">
-                      The recommendation exists, but stack detail fields were missing. The simulation launcher below can
-                      still use the available mission output safely.
+                      {t("recommendation_missing_stack")}
                     </p>
                   )}
                 </div>
               </div>
 
               <div className="rounded-lg border border-neon-orange/25 bg-neon-orange/5 p-3">
-                <p className="text-[10px] font-mono uppercase tracking-wider text-neon-orange">Operational Note</p>
+                <p className="text-[10px] font-mono uppercase tracking-wider text-neon-orange">{t("operational_note")}</p>
                 <p className="mt-2 text-xs leading-relaxed text-foreground/80">
-                  {currentRecommendation.operational_note ||
-                    "The recommendation is ready. Launch a validation run to inspect loop resilience over time."}
+                  {currentRecommendation.operational_note || t("recommendation_ready_note")}
                 </p>
               </div>
             </div>
@@ -236,13 +240,12 @@ const Index = () => {
               <>
                 <Loader2 className="h-8 w-8 animate-spin text-neon-cyan" />
                 <p className="text-sm font-mono text-foreground/80">
-                  Preparing a mission recommendation and validation-ready stack...
+                  {t("preparing_recommendation")}
                 </p>
               </>
             ) : (
               <p className="text-sm font-mono text-muted-foreground">
-                Configure the mission above and click Generate Plan. The resulting stack will be stored safely and used
-                to prefill the simulation launcher below.
+                {t("configure_mission_prompt")}
               </p>
             )}
           </div>

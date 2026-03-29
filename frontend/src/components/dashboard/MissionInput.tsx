@@ -1,6 +1,7 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
+import { useI18n } from "@/lib/i18n";
 import type { ConstraintLevel } from "@/lib/types";
 
 interface MissionInputProps {
@@ -29,50 +30,50 @@ const MissionInput = ({
   goal, setGoal,
   onGenerate, isLoading,
 }: MissionInputProps) => {
-  const formatConstraint = (value: ConstraintLevel) =>
-    value.replace(/\b\w/g, (char) => char.toUpperCase());
+  const { t } = useI18n();
+  const formatConstraint = (value: ConstraintLevel) => t(`constraint_${value}`);
 
   return (
     <div className="flex min-w-0 flex-col gap-3">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <div className="min-w-0 space-y-1">
-          <label className="text-xs font-mono uppercase tracking-wider text-muted-foreground">Environment</label>
+          <label className="text-xs font-mono uppercase tracking-wider text-muted-foreground">{t("environment")}</label>
           <Select value={environment} onValueChange={setEnvironment}>
             <SelectTrigger className="bg-muted/50 border-glass-border text-foreground h-8 text-sm">
               <SelectValue />
             </SelectTrigger>
             <SelectContent className="bg-card border-glass-border">
-              <SelectItem value="mars">Mars</SelectItem>
-              <SelectItem value="moon">Moon</SelectItem>
-              <SelectItem value="iss">ISS</SelectItem>
+              <SelectItem value="mars">{t("environment_mars")}</SelectItem>
+              <SelectItem value="moon">{t("environment_moon")}</SelectItem>
+              <SelectItem value="iss">{t("environment_iss")}</SelectItem>
             </SelectContent>
           </Select>
         </div>
 
         <div className="min-w-0 space-y-1">
-          <label className="text-xs font-mono uppercase tracking-wider text-muted-foreground">Duration</label>
+          <label className="text-xs font-mono uppercase tracking-wider text-muted-foreground">{t("duration")}</label>
           <Select value={duration} onValueChange={setDuration}>
             <SelectTrigger className="bg-muted/50 border-glass-border text-foreground h-8 text-sm">
               <SelectValue />
             </SelectTrigger>
             <SelectContent className="bg-card border-glass-border">
-              <SelectItem value="short">Short (3 mo)</SelectItem>
-              <SelectItem value="medium">Medium (6 mo)</SelectItem>
-              <SelectItem value="long">Long (12+ mo)</SelectItem>
+              <SelectItem value="short">{t("duration_short")}</SelectItem>
+              <SelectItem value="medium">{t("duration_medium")}</SelectItem>
+              <SelectItem value="long">{t("duration_long")}</SelectItem>
             </SelectContent>
           </Select>
         </div>
 
         <div className="min-w-0 space-y-1">
-          <label className="text-xs font-mono uppercase tracking-wider text-muted-foreground">Optimization Goal</label>
+          <label className="text-xs font-mono uppercase tracking-wider text-muted-foreground">{t("optimization_goal")}</label>
           <Select value={goal} onValueChange={setGoal}>
             <SelectTrigger className="bg-muted/50 border-glass-border text-foreground h-8 text-sm">
               <SelectValue />
             </SelectTrigger>
             <SelectContent className="bg-card border-glass-border">
-              <SelectItem value="balanced">Balanced</SelectItem>
-              <SelectItem value="calorie">Calorie Max</SelectItem>
-              <SelectItem value="water">Water Efficiency</SelectItem>
+              <SelectItem value="balanced">{t("goal_balanced")}</SelectItem>
+              <SelectItem value="calorie">{t("goal_calorie")}</SelectItem>
+              <SelectItem value="water">{t("goal_water")}</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -83,7 +84,7 @@ const MissionInput = ({
             disabled={isLoading}
             className="w-full h-8 bg-primary text-primary-foreground font-bold text-sm uppercase tracking-wider pulse-glow hover:bg-primary/90 transition-all"
           >
-            {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Generate Plan"}
+            {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : t("generate_plan")}
           </Button>
         </div>
       </div>
@@ -91,7 +92,7 @@ const MissionInput = ({
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="min-w-0 space-y-1">
           <div className="flex justify-between gap-2">
-            <label className="text-xs font-mono uppercase tracking-wider text-neon-cyan">Water Constraint</label>
+            <label className="text-xs font-mono uppercase tracking-wider text-neon-cyan">{t("water_constraint")}</label>
             <span className="text-xs font-mono text-neon-cyan">{formatConstraint(waterConstraint)}</span>
           </div>
           <Select value={waterConstraint} onValueChange={(value) => setWaterConstraint(value as ConstraintLevel)}>
@@ -99,15 +100,15 @@ const MissionInput = ({
               <SelectValue />
             </SelectTrigger>
             <SelectContent className="border-glass-border bg-card">
-              <SelectItem value="low">Low</SelectItem>
-              <SelectItem value="medium">Medium</SelectItem>
-              <SelectItem value="high">High</SelectItem>
+              <SelectItem value="low">{t("constraint_low")}</SelectItem>
+              <SelectItem value="medium">{t("constraint_medium")}</SelectItem>
+              <SelectItem value="high">{t("constraint_high")}</SelectItem>
             </SelectContent>
           </Select>
         </div>
         <div className="min-w-0 space-y-1">
           <div className="flex justify-between gap-2">
-            <label className="text-xs font-mono uppercase tracking-wider text-neon-gold">Energy Constraint</label>
+            <label className="text-xs font-mono uppercase tracking-wider text-neon-gold">{t("energy_constraint")}</label>
             <span className="text-xs font-mono text-neon-gold">{formatConstraint(energyConstraint)}</span>
           </div>
           <Select value={energyConstraint} onValueChange={(value) => setEnergyConstraint(value as ConstraintLevel)}>
@@ -115,15 +116,15 @@ const MissionInput = ({
               <SelectValue />
             </SelectTrigger>
             <SelectContent className="border-glass-border bg-card">
-              <SelectItem value="low">Low</SelectItem>
-              <SelectItem value="medium">Medium</SelectItem>
-              <SelectItem value="high">High</SelectItem>
+              <SelectItem value="low">{t("constraint_low")}</SelectItem>
+              <SelectItem value="medium">{t("constraint_medium")}</SelectItem>
+              <SelectItem value="high">{t("constraint_high")}</SelectItem>
             </SelectContent>
           </Select>
         </div>
         <div className="min-w-0 space-y-1">
           <div className="flex justify-between gap-2">
-            <label className="text-xs font-mono uppercase tracking-wider text-neon-purple">Area Constraint</label>
+            <label className="text-xs font-mono uppercase tracking-wider text-neon-purple">{t("area_constraint")}</label>
             <span className="text-xs font-mono text-neon-purple">{formatConstraint(areaConstraint)}</span>
           </div>
           <Select value={areaConstraint} onValueChange={(value) => setAreaConstraint(value as ConstraintLevel)}>
@@ -131,16 +132,16 @@ const MissionInput = ({
               <SelectValue />
             </SelectTrigger>
             <SelectContent className="border-glass-border bg-card">
-              <SelectItem value="low">Low</SelectItem>
-              <SelectItem value="medium">Medium</SelectItem>
-              <SelectItem value="high">High</SelectItem>
+              <SelectItem value="low">{t("constraint_low")}</SelectItem>
+              <SelectItem value="medium">{t("constraint_medium")}</SelectItem>
+              <SelectItem value="high">{t("constraint_high")}</SelectItem>
             </SelectContent>
           </Select>
         </div>
       </div>
 
       <p className="text-[11px] font-mono text-muted-foreground">
-        Low means fewer limitations. High means stronger constraints.
+        {t("constraint_helper")}
       </p>
     </div>
   );

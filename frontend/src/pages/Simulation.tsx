@@ -3,9 +3,11 @@ import { ArrowDownRight, ArrowLeft, ArrowRight, ArrowUpRight, FlaskConical, Load
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
+import LanguageToggle from "@/components/LanguageToggle";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { stepMission } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
 import { buildLayerSummaries, formatLabel, getExecutiveSummary } from "@/lib/mission-view";
 import { loadSimulationSession, saveSimulationSession, type SimulationSession } from "@/lib/simulation-session";
 import type { MissionEventsPayload, MissionStatus } from "@/lib/types";
@@ -47,22 +49,25 @@ const formatDeltaArrow = (delta?: number | null) => {
     return {
       arrow: "->",
       tone: "text-muted-foreground",
-      label: "Stable",
+      trendKey: "trend_stable",
+      deltaLabel: null,
     };
   }
 
   if (delta > 0) {
     return {
-      arrow: "UP",
+      arrow: "^",
       tone: "text-neon-red",
-      label: `+${delta.toFixed(2)}`,
+      trendKey: "trend_increased",
+      deltaLabel: `+${delta.toFixed(2)}`,
     };
   }
 
   return {
-    arrow: "DOWN",
+    arrow: "v",
     tone: "text-neon-green",
-    label: delta.toFixed(2),
+    trendKey: "trend_decreased",
+    deltaLabel: delta.toFixed(2),
   };
 };
 
@@ -97,61 +102,97 @@ const parseSystemChange = (value: string) => {
   };
 };
 
-const buildEventFeedback = (events: MissionEventsPayload | null | undefined) => {
+const eventLabelKey = (key: keyof MissionEventsPayload) => {
+  if (key === "water_drop") {
+    return "water_drop";
+  }
+  if (key === "energy_drop") {
+    return "energy_drop";
+  }
+  if (key === "contamination") {
+    return "contamination";
+  }
+  return "yield_drop";
+};
+
+const formatEventLabel = (
+  value: string,
+  t: (key: string, values?: Record<string, string | number>) => string,
+) => {
+  if (value === "water_drop") {
+    return t("water_drop");
+  }
+  if (value === "energy_drop") {
+    return t("energy_drop");
+  }
+  if (value === "contamination") {
+    return t("contamination");
+  }
+  if (value === "yield_variation" || value === "yield_drop") {
+    return t("yield_drop");
+  }
+  return formatLabel(value);
+};
+
+const buildEventFeedback = (
+  events: MissionEventsPayload | null | undefined,
+  t: (key: string, values?: Record<string, string | number>) => string,
+) => {
   if (!events) {
-    return "Baseline week only.";
+    return t("baseline_week_only");
   }
 
   const active = Object.entries(events).filter(([, value]) => value !== null && value !== undefined);
   if (active.length === 0) {
-    return "Baseline week only.";
+    return t("baseline_week_only");
   }
 
   const fragments = active.map(([key, value]) => {
-    const label = formatLabel(key);
+    const label = t(eventLabelKey(key as keyof MissionEventsPayload));
     if (typeof value === "number") {
       return `${label} ${value}`;
     }
     return label;
   });
 
-  return `${fragments.join(" | ")} applied`;
+  return `${fragments.join(" | ")} ${t("applied_suffix")}`;
 };
 
 const buildImpactSnapshot = (
   events: MissionEventsPayload | null | undefined,
   riskDelta: number | null,
   systemChanged: boolean,
+  t: (key: string, values?: Record<string, string | number>) => string,
 ) => {
   const fragments: string[] = [];
 
   if (events?.water_drop !== undefined) {
-    fragments.push("Water drop increased resource pressure");
+    fragments.push(t("impact_water_drop"));
   }
   if (events?.energy_drop !== undefined) {
-    fragments.push("Energy drop increased power strain");
+    fragments.push(t("impact_energy_drop"));
   }
   if (events?.contamination !== undefined) {
-    fragments.push("Contamination raised biological stress");
+    fragments.push(t("impact_contamination"));
   }
   if (events?.yield_variation !== undefined && events.yield_variation < 0) {
-    fragments.push("Yield drop reduced crop output");
+    fragments.push(t("impact_yield_drop"));
   }
 
   if (fragments.length === 0) {
-    return "This week held close to the prior ecosystem baseline.";
+    return t("impact_baseline");
   }
 
-  const base = fragments.slice(0, 2).join(" and ");
+  const base = fragments.slice(0, 2).join(` ${t("and_connector")} `);
   const riskEffect =
     riskDelta === null
-      ? "while risk remained under observation"
+      ? t("risk_under_observation")
       : riskDelta > 0.05
-        ? "and pushed risk upward"
+        ? t("risk_pushed_upward")
         : riskDelta < -0.05
-          ? "and reduced risk pressure"
-          : "while risk held near baseline";
-  const systemEffect = systemChanged ? " while forcing a stack adjustment" : "";
+          ? t("risk_reduced_pressure")
+          : t("risk_held_baseline");
+  const systemEffect = systemChanged ? ` ${t("forcing_stack_adjustment")}` : "";
 
   return `${base}. ${riskEffect.charAt(0).toUpperCase()}${riskEffect.slice(1)}${systemEffect}.`;
 };
@@ -159,6 +200,7 @@ const buildImpactSnapshot = (
 const buildLayerInteractionHints = (
   type: "crop" | "algae" | "microbial",
   metrics: Record<string, number> | undefined,
+  t: (key: string, values?: Record<string, string | number>) => string,
 ) => {
   if (!metrics) {
     return [];
@@ -177,21 +219,21 @@ const buildLayerInteractionHints = (
 
   if (type === "crop") {
     return [
-      ["Yield", pickMetric("calorie_yield", "edible_yield")],
-      ["Water Use", pickMetric("water_need")],
+      [t("yield_hint"), pickMetric("calorie_yield", "edible_yield")],
+      [t("water_use_hint"), pickMetric("water_need")],
     ].filter((item): item is [string, string] => Boolean(item[1]));
   }
 
   if (type === "algae") {
     return [
-      ["O2 Support", pickMetric("oxygen_contribution")],
-      ["Biomass", pickMetric("biomass_production", "protein_potential")],
+      [t("o2_support_hint"), pickMetric("oxygen_contribution")],
+      [t("biomass_hint"), pickMetric("biomass_production", "protein_potential")],
     ].filter((item): item is [string, string] => Boolean(item[1]));
   }
 
   return [
-    ["Nutrient Loop", pickMetric("nutrient_conversion_capability", "loop_closure_contribution")],
-    ["Recycling", pickMetric("waste_recycling_efficiency")],
+    [t("nutrient_loop_hint"), pickMetric("nutrient_conversion_capability", "loop_closure_contribution")],
+    [t("recycling_hint"), pickMetric("waste_recycling_efficiency")],
   ].filter((item): item is [string, string] => Boolean(item[1]));
 };
 
@@ -202,6 +244,7 @@ const resolveEndReason = (
   waterLevel: number,
   energyLevel: number,
   maxWeeks: number,
+  t: (key: string, values?: Record<string, string | number>) => string,
 ): { key: EndReasonKey; text: string } | null => {
   if (simulationStatus === "running") {
     return null;
@@ -210,59 +253,60 @@ const resolveEndReason = (
   if (endReason === "water_depleted") {
     return {
       key: "water_depleted",
-      text: "Water resources were exhausted",
+      text: t("end_reason_water"),
     };
   }
 
   if (endReason === "energy_depleted") {
     return {
       key: "energy_depleted",
-      text: "Energy supply collapsed",
+      text: t("end_reason_energy"),
     };
   }
 
   if (endReason === "risk_collapse") {
     return {
       key: "risk_collapse",
-      text: "System risk exceeded safe limits",
+      text: t("end_reason_risk"),
     };
   }
 
   if (endReason === "duration_complete") {
     return {
       key: "duration_complete",
-      text: `Simulation reached its ${maxWeeks}-week mission horizon`,
+      text: t("end_reason_duration", { weeks: maxWeeks }),
     };
   }
 
   if (waterLevel <= 0) {
     return {
       key: "water_depleted",
-      text: "Water resources were exhausted",
+      text: t("end_reason_water"),
     };
   }
 
   if (energyLevel <= 0) {
     return {
       key: "energy_depleted",
-      text: "Energy supply collapsed",
+      text: t("end_reason_energy"),
     };
   }
 
   if (simulationStatus === "failure" || riskLevel >= 80) {
     return {
       key: "risk_collapse",
-      text: "System risk exceeded safe limits",
+      text: t("end_reason_risk"),
     };
   }
 
   return {
     key: "duration_complete",
-    text: `Simulation reached its ${maxWeeks}-week mission horizon`,
+    text: t("end_reason_duration", { weeks: maxWeeks }),
   };
 };
 
 const Simulation = () => {
+  const { t } = useI18n();
   const location = useLocation();
   const navigate = useNavigate();
   const initialBundle = useMemo(() => {
@@ -309,17 +353,16 @@ const Simulation = () => {
         <div className="mx-auto flex min-h-[calc(100vh-1.5rem)] max-w-[1200px] items-center justify-center">
           <div className="glass-panel flex w-full max-w-2xl flex-col gap-4 overflow-hidden p-6 text-center">
             <div className="space-y-2">
-              <h1 className="text-lg font-bold tracking-wide neon-text-cyan">Mission Validation Simulation</h1>
+              <h1 className="text-lg font-bold tracking-wide neon-text-cyan">{t("mission_validation_simulation")}</h1>
               <p className="text-sm text-muted-foreground">
-                No active simulation session was found. Return to the mission planner, generate a plan, and launch a
-                validation run from there.
+                {t("no_active_simulation")}
               </p>
             </div>
             <div className="flex justify-center">
               <Button asChild className="bg-primary text-primary-foreground hover:bg-primary/90">
                 <Link to="/">
                   <ArrowLeft className="mr-2 h-4 w-4" />
-                  Back to Mission Planner
+                  {t("back_to_mission_planner")}
                 </Link>
               </Button>
             </div>
@@ -329,8 +372,8 @@ const Simulation = () => {
     );
   }
 
-  const layerSummaries = buildLayerSummaries(session);
-  const previousLayerSummaries = previousSession ? buildLayerSummaries(previousSession) : [];
+  const layerSummaries = buildLayerSummaries(session, t);
+  const previousLayerSummaries = previousSession ? buildLayerSummaries(previousSession, t) : [];
   const cropLayer = layerSummaries.find((layer) => layer.type === "crop");
   const missionState = session.mission_state;
   const latestEvents = "events" in session ? session.events ?? null : null;
@@ -343,16 +386,16 @@ const Simulation = () => {
   const reasoningSummary =
     session.llm_analysis?.reasoning_summary ||
     session.explanations?.system_reasoning ||
-    "Deterministic simulation analysis is active for this ecosystem session.";
+    t("deterministic_analysis_active");
   const improvementCues = session.llm_analysis?.improvements ?? [];
   const alternativeText =
     Object.values(session.llm_analysis?.alternative ?? {})
       .slice(0, 2)
-      .join(" / ") || "No alternate reference retained.";
+      .join(" / ") || t("no_alternate_reference");
   const adaptationSummary =
     ("adaptation_summary" in session ? session.adaptation_summary : "") ||
     session.ui_enhanced?.adaptation_summary ||
-    "Simulation initialized from the selected biological stack. Advance a week or apply an event to inspect system response.";
+    t("simulation_initialized");
   const maxWeeks = missionState.max_weeks ?? durationWeekTargets[missionState.duration];
   const recoveredWater = missionState.last_recovered_water ?? 0;
   const recoveryQueueSize = missionState.water_recovery_queue?.length ?? 0;
@@ -382,12 +425,6 @@ const Simulation = () => {
       : simulationStatus === "complete"
         ? "border-neon-green/35 bg-neon-green/12 text-neon-green"
         : "border-neon-cyan/30 bg-neon-cyan/10 text-neon-cyan";
-  const simulationStatusLabel =
-    simulationStatus === "failure"
-      ? "System Failure"
-      : simulationStatus === "complete"
-        ? "Simulation Complete"
-        : "Running";
   const endReason = resolveEndReason(
     missionState.end_reason,
     simulationStatus,
@@ -395,19 +432,27 @@ const Simulation = () => {
     missionState.resources.water,
     missionState.resources.energy,
     maxWeeks,
+    t,
   );
   const endSummary =
     simulationStatus === "running"
       ? null
-      : `${endReason?.text || "Simulation finished."} Final risk settled at ${currentRisk.toFixed(2)}% after ${missionState.time} of ${maxWeeks} weeks.`;
-  const riskTrend =
+      : t("end_summary", {
+          reason: endReason?.text || t("simulation_finished"),
+          risk: currentRisk.toFixed(2),
+          week: missionState.time,
+          maxWeeks,
+        });
+  const riskTrendKey =
     riskDelta === null
-      ? "Baseline"
+      ? "trend_baseline"
       : riskDelta > 0.05
-        ? "Increased"
+        ? "trend_increased"
         : riskDelta < -0.05
-          ? "Decreased"
-        : "Stable";
+          ? "trend_decreased"
+          : "trend_stable";
+  const riskTrend = t(riskTrendKey);
+  const riskDeltaIndicator = formatDeltaArrow(riskDelta);
   const previousPlantSystem =
     previousLayerSummaries.find((layer) => layer.type === "crop")?.supportSystem ||
     parsedSystemChanges.find((item) => item.kind === "grow_system")?.from ||
@@ -427,13 +472,13 @@ const Simulation = () => {
   const currentStackLabel =
     layerSummaries.length > 0
       ? layerSummaries.map((layer) => formatLabel(layer.name)).join(" + ")
-      : "Unavailable";
+      : t("unavailable");
   const humanSystemChanges = parsedSystemChanges.map((item) => {
-    const label = item.kind === "grow_system" ? "Plant system" : `${formatLabel(item.kind)} layer`;
+    const label = item.kind === "grow_system" ? t("plant_system") : t(`${item.kind}_layer`);
     return `${label}: ${formatLabel(item.from)} -> ${formatLabel(item.to)}`;
   });
-  const lastEventFeedback = buildEventFeedback(latestEvents);
-  const impactSnapshot = buildImpactSnapshot(latestEvents, riskDelta, humanSystemChanges.length > 0);
+  const lastEventFeedback = buildEventFeedback(latestEvents, t);
+  const impactSnapshot = buildImpactSnapshot(latestEvents, riskDelta, humanSystemChanges.length > 0, t);
   const recentTimeline = missionState.history.slice(-3).map((entry) => ({
     step: entry.time,
     event: entry.event,
@@ -442,31 +487,31 @@ const Simulation = () => {
 
   const metricCards = [
     {
-      label: "Oxygen Level",
+      label: t("oxygen_level"),
       value: missionState.system_metrics.oxygen_level,
       previousValue: previousSession?.mission_state.system_metrics.oxygen_level ?? null,
       accent: "bg-neon-cyan",
     },
     {
-      label: "CO2 Balance",
+      label: t("co2_balance"),
       value: missionState.system_metrics.co2_balance,
       previousValue: previousSession?.mission_state.system_metrics.co2_balance ?? null,
       accent: "bg-neon-green",
     },
     {
-      label: "Food Supply",
+      label: t("food_supply"),
       value: missionState.system_metrics.food_supply,
       previousValue: previousSession?.mission_state.system_metrics.food_supply ?? null,
       accent: "bg-neon-gold",
     },
     {
-      label: "Nutrient Cycle Efficiency",
+      label: t("nutrient_cycle_efficiency"),
       value: missionState.system_metrics.nutrient_cycle_efficiency,
       previousValue: previousSession?.mission_state.system_metrics.nutrient_cycle_efficiency ?? null,
       accent: "bg-neon-orange",
     },
     {
-      label: "Risk Level",
+      label: t("risk_level"),
       value: missionState.system_metrics.risk_level,
       previousValue: previousSession?.mission_state.system_metrics.risk_level ?? null,
       accent: "bg-neon-red",
@@ -475,7 +520,7 @@ const Simulation = () => {
   const layerTransitions = previousSession
     ? layerSummaries
         .map((layer) => {
-          const previous = buildLayerSummaries(previousSession).find((item) => item.type === layer.type);
+          const previous = buildLayerSummaries(previousSession, t).find((item) => item.type === layer.type);
           if (!previous) {
             return null;
           }
@@ -527,12 +572,12 @@ const Simulation = () => {
       setEnergyDrop("");
       setContamination("");
       setYieldDrop("");
-      toast.success("Week advanced", {
-        description: `${buildEventFeedback(Object.keys(events).length > 0 ? events : null)} ${response.adaptation_summary}`,
+      toast.success(t("week_advanced"), {
+        description: `${buildEventFeedback(Object.keys(events).length > 0 ? events : null, t)} ${response.adaptation_summary}`,
       });
     } catch (requestError) {
-      const message = requestError instanceof Error ? requestError.message : "Unable to advance the simulation.";
-      toast.error("Simulation step failed", { description: message });
+      const message = requestError instanceof Error ? requestError.message : t("unable_to_advance_simulation");
+      toast.error(t("simulation_step_failed"), { description: message });
     } finally {
       setIsApplyingStep(false);
     }
@@ -552,8 +597,8 @@ const Simulation = () => {
     setContamination("");
     setYieldDrop("");
     setShowUpdateHighlight(false);
-    toast.success("Simulation reset", {
-      description: "The ecosystem returned to its initial launch state.",
+    toast.success(t("simulation_reset"), {
+      description: t("simulation_reset_desc"),
     });
   };
 
@@ -572,12 +617,12 @@ const Simulation = () => {
               <p className={`text-[11px] font-mono uppercase tracking-[0.28em] ${
                 simulationStatus === "failure" ? "text-neon-red" : "text-neon-green"
               }`}>
-                Simulation Over
+                {t("simulation_over")}
               </p>
               <h2 className={`text-3xl font-bold tracking-wide ${
                 simulationStatus === "failure" ? "text-neon-red" : "text-neon-green"
               }`}>
-                {simulationStatus === "failure" ? "System Failure" : "Simulation Complete"}
+                {simulationStatus === "failure" ? t("system_failure") : t("simulation_complete")}
               </h2>
               <p className="mx-auto max-w-2xl text-sm leading-relaxed text-foreground/80">
                 {endSummary}
@@ -586,15 +631,15 @@ const Simulation = () => {
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <div className="rounded-lg border border-glass-border bg-muted/10 p-4">
-                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Survived Weeks</p>
+                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">{t("survived_weeks")}</p>
                 <p className="mt-2 text-2xl font-mono text-foreground">{missionState.time}</p>
               </div>
               <div className="rounded-lg border border-glass-border bg-muted/10 p-4">
-                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Planned Duration</p>
-                <p className="mt-2 text-lg font-mono text-foreground">{maxWeeks} weeks</p>
+                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">{t("planned_duration")}</p>
+                <p className="mt-2 text-lg font-mono text-foreground">{maxWeeks} {t("weeks_unit")}</p>
               </div>
               <div className="rounded-lg border border-glass-border bg-muted/10 p-4">
-                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Final Risk Level</p>
+                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">{t("final_risk_level")}</p>
                 <p className={`mt-2 text-2xl font-mono ${
                   simulationStatus === "failure" ? "text-neon-red" : "text-neon-green"
                 }`}>
@@ -602,30 +647,30 @@ const Simulation = () => {
                 </p>
               </div>
               <div className="rounded-lg border border-glass-border bg-muted/10 p-4">
-                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Final System Status</p>
-                <p className="mt-2 text-lg font-mono text-foreground">{session.mission_status}</p>
+                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">{t("final_system_status")}</p>
+                <p className="mt-2 text-lg font-mono text-foreground">{t(`mission_status_${session.mission_status.toLowerCase()}`)}</p>
               </div>
             </div>
             <div className="rounded-lg border border-glass-border bg-muted/10 p-4">
-              <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">End Reason</p>
-              <p className="mt-2 text-sm text-foreground">{endReason?.text || "Simulation ended."}</p>
+              <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">{t("end_reason")}</p>
+              <p className="mt-2 text-sm text-foreground">{endReason?.text || t("simulation_finished")}</p>
               <p className="mt-1 text-xs font-mono text-muted-foreground">
-                Initial risk {initialRisk.toFixed(2)}% {"->"} Final risk {currentRisk.toFixed(2)}%
+                {t("initial_to_final_risk", { initial: initialRisk.toFixed(2), final: currentRisk.toFixed(2) })}
               </p>
             </div>
 
             <div className="rounded-lg border border-glass-border bg-terminal/50 p-4">
-              <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Final Deterministic Summary</p>
+              <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">{t("final_deterministic_summary")}</p>
               <p className="mt-2 text-sm leading-relaxed text-foreground/80">{adaptationSummary}</p>
             </div>
 
             {recentTimeline.length > 0 && (
               <div className="rounded-lg border border-glass-border bg-muted/10 p-4">
-                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Last Events</p>
+                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">{t("last_events")}</p>
                 <div className="mt-2 space-y-2 text-sm text-foreground/80">
                   {recentTimeline.map((entry) => (
                     <p key={`${entry.step}-${entry.event}`}>
-                      Week {entry.step}: {formatLabel(entry.event)}. {entry.summary}
+                      {t("week_label")} {entry.step}: {formatEventLabel(entry.event, t)}. {entry.summary}
                     </p>
                   ))}
                 </div>
@@ -638,12 +683,12 @@ const Simulation = () => {
                 onClick={handleRunAgain}
                 className="h-11 bg-primary font-bold uppercase tracking-wider text-primary-foreground hover:bg-primary/90"
               >
-                Run Again
+                {t("run_again")}
               </Button>
               <Button asChild variant="outline" className="h-11 border-glass-border bg-muted/20 text-foreground hover:bg-muted/35">
                 <Link to="/">
                   <ArrowLeft className="mr-2 h-4 w-4" />
-                  Back to Mission Planner
+                  {t("back_to_mission_planner")}
                 </Link>
               </Button>
             </div>
@@ -658,46 +703,47 @@ const Simulation = () => {
               <div className="flex flex-wrap items-center gap-2">
                 <div className="h-2 w-2 rounded-full bg-neon-cyan blink" />
                 <h1 className="text-sm font-bold font-mono uppercase tracking-[0.28em] neon-text-cyan">
-                  Mission Validation Simulation
+                  {t("mission_validation_simulation")}
                 </h1>
                 <span className={`rounded border px-2 py-0.5 text-[10px] font-mono ${statusClass(session.mission_status)}`}>
-                  {session.mission_status}
+                  {t(`mission_status_${session.mission_status.toLowerCase()}`)}
                 </span>
                 <span className={`rounded border px-2 py-0.5 text-[10px] font-mono uppercase tracking-wider ${simulationStatusTone}`}>
-                  Simulation Status: {simulationStatusLabel}
+                  {t("simulation_status")}: {simulationStatus === "failure" ? t("system_failure") : simulationStatus === "complete" ? t("simulation_complete") : t("running")}
                 </span>
               </div>
                 <p className="max-w-4xl text-sm text-foreground/80">
-                  {executiveSummary || "Validation session is active for the selected mission stack."}
+                  {executiveSummary || t("validation_session_active")}
                 </p>
               <div className="flex flex-wrap gap-3 text-[11px] font-mono text-muted-foreground">
-                <span>Environment: <span className="text-foreground">{formatLabel(missionState.environment)}</span></span>
-                <span>Mission Duration: <span className="text-foreground">{formatLabel(missionState.duration)}</span></span>
-                <span>Planned Horizon: <span className="text-foreground">{maxWeeks} weeks</span></span>
-                <span>Goal: <span className="text-foreground">{formatLabel(missionState.goal)}</span></span>
-                <span>Current Week: <span className="text-foreground">{missionState.time} / {maxWeeks}</span></span>
-                <span>Last Weekly Event: <span className="text-foreground">{lastEventFeedback}</span></span>
+                <span>{t("environment")}: <span className="text-foreground">{t(`environment_${missionState.environment}`)}</span></span>
+                <span>{t("mission_duration")}: <span className="text-foreground">{t(`duration_${missionState.duration}`)}</span></span>
+                <span>{t("planned_horizon")}: <span className="text-foreground">{maxWeeks} {t("weeks_unit")}</span></span>
+                <span>{t("goal")}: <span className="text-foreground">{t(`goal_${missionState.goal}`)}</span></span>
+                <span>{t("current_week")}: <span className="text-foreground">{missionState.time} / {maxWeeks}</span></span>
+                <span>{t("last_weekly_event")}: <span className="text-foreground">{lastEventFeedback}</span></span>
                 <span>
-                  Mode: <span className="text-neon-green">Deterministic Simulation</span>
+                  {t("mode")}: <span className="text-neon-green">{t("deterministic_simulation")}</span>
                 </span>
                 <span>
-                  Plant system:{" "}
+                  {t("plant_system")}:{" "}
                   <span className="text-neon-cyan">
-                    {formatLabel(cropLayer?.supportSystem || "unknown")}
+                    {formatLabel(cropLayer?.supportSystem || t("unknown"))}
                   </span>
                 </span>
               </div>
             </div>
 
               <div className="flex shrink-0 items-start gap-2">
+                <LanguageToggle />
                 <div className="rounded-lg border border-neon-orange/25 bg-neon-orange/5 px-3 py-2 text-right">
-                  <p className="text-[9px] font-mono uppercase tracking-wider text-neon-orange">Operational Note</p>
+                  <p className="text-[9px] font-mono uppercase tracking-wider text-neon-orange">{t("operational_note")}</p>
                   <p className="mt-1 max-w-sm text-xs leading-relaxed text-foreground/75">{session.operational_note}</p>
                 </div>
                 <Button asChild variant="outline" className="border-glass-border bg-muted/20 text-foreground hover:bg-muted/35">
                   <Link to="/">
                     <ArrowLeft className="h-4 w-4" />
-                    Planner
+                    {t("back_to_mission_planner")}
                   </Link>
                 </Button>
               </div>
@@ -706,10 +752,10 @@ const Simulation = () => {
 
         <div className="glass-panel flex min-w-0 flex-col gap-4 overflow-hidden p-4">
           <div className="flex items-center gap-2">
-            <Orbit className="h-4 w-4 text-neon-cyan" />
-            <h2 className="text-[10px] font-mono uppercase tracking-[0.24em] text-muted-foreground">
-              Active Ecosystem Stack
-            </h2>
+              <Orbit className="h-4 w-4 text-neon-cyan" />
+              <h2 className="text-[10px] font-mono uppercase tracking-[0.24em] text-muted-foreground">
+                {t("active_ecosystem_stack")}
+              </h2>
           </div>
           <div className="space-y-3">
             {layerSummaries.length > 0 ? (
@@ -721,13 +767,13 @@ const Simulation = () => {
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0 space-y-1">
                       <div className={`inline-flex rounded-md border px-2 py-0.5 text-[10px] font-mono uppercase tracking-wider ${layer.accentClass}`}>
-                        {layer.label}
+                        {t(`${layer.type}_layer`)}
                       </div>
                       <h3 className="text-lg font-semibold text-foreground">{formatLabel(layer.name)}</h3>
                       <p className="max-w-4xl text-sm leading-relaxed text-foreground/78">{layer.summary}</p>
-                      {buildLayerInteractionHints(layer.type, session.selected_system?.[layer.type]?.metrics).length > 0 && (
+                      {buildLayerInteractionHints(layer.type, session.selected_system?.[layer.type]?.metrics, t).length > 0 && (
                         <div className="mt-2 flex flex-wrap gap-2">
-                          {buildLayerInteractionHints(layer.type, session.selected_system?.[layer.type]?.metrics).map(([label, value]) => (
+                          {buildLayerInteractionHints(layer.type, session.selected_system?.[layer.type]?.metrics, t).map(([label, value]) => (
                             <span
                               key={`${layer.type}-${label}`}
                               className="rounded border border-glass-border/70 bg-muted/10 px-2 py-1 text-[10px] font-mono text-muted-foreground"
@@ -740,20 +786,20 @@ const Simulation = () => {
                     </div>
                     <div className="grid min-w-[180px] grid-cols-2 gap-2 text-right text-[10px] font-mono text-muted-foreground">
                       <div>
-                        <p>Mission Fit</p>
+                        <p>{t("mission_fit")}</p>
                         <p className="text-sm text-foreground">{Math.round(layer.missionFitScore * 100)}%</p>
                       </div>
                       <div>
-                        <p>Risk</p>
+                        <p>{t("risk")}</p>
                         <p className="text-sm text-foreground">{Math.round(layer.riskScore * 100)}%</p>
                       </div>
                       <div>
-                        <p>Domain Score</p>
+                        <p>{t("domain_score")}</p>
                         <p className="text-sm text-foreground">{layer.domainScore.toFixed(2)}</p>
                       </div>
                       <div>
-                        <p>Current Rank</p>
-                        <p className="text-sm text-foreground">{layer.rank ? `#${layer.rank}` : "N/A"}</p>
+                        <p>{t("current_rank")}</p>
+                        <p className="text-sm text-foreground">{layer.rank ? `#${layer.rank}` : t("n_a")}</p>
                       </div>
                     </div>
                   </div>
@@ -761,14 +807,14 @@ const Simulation = () => {
                   <div className="mt-3 flex flex-wrap items-center gap-3 text-[10px] font-mono text-muted-foreground">
                     {layer.type === "crop" && (
                       <span>
-                        Support system:{" "}
+                        {t("support_system")}:{" "}
                         <span className="text-neon-cyan">
-                          {formatLabel(layer.supportSystem || "unknown")}
+                          {formatLabel(layer.supportSystem || t("unknown"))}
                         </span>
                       </span>
                     )}
                     <span>
-                      Ranked candidates available:{" "}
+                      {t("ranked_candidates_available")}:{" "}
                       <span className="text-foreground">{session.ranked_candidates?.[layer.type]?.length ?? 0}</span>
                     </span>
                   </div>
@@ -776,8 +822,7 @@ const Simulation = () => {
               ))
             ) : (
               <div className="rounded-lg border border-glass-border bg-black/10 p-4 text-sm text-muted-foreground">
-                Selected ecosystem detail fields were incomplete, so the simulation is falling back to metrics and
-                mission-state data only.
+                {t("selected_detail_incomplete")}
               </div>
             )}
           </div>
@@ -788,7 +833,7 @@ const Simulation = () => {
             <div className="flex items-center gap-2">
               <Orbit className="h-4 w-4 text-neon-cyan" />
               <h2 className="text-[10px] font-mono uppercase tracking-[0.24em] text-muted-foreground">
-                System Metrics
+                {t("system_metrics")}
               </h2>
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-1">
@@ -824,8 +869,11 @@ const Simulation = () => {
               ))}
             </div>
             <div className="rounded-lg border border-glass-border bg-muted/10 px-3 py-2 text-[11px] font-mono text-muted-foreground">
-              Constraints now run at water={formatLabel(missionState.constraints.water)}, energy=
-              {formatLabel(missionState.constraints.energy)}, area={formatLabel(missionState.constraints.area)}.
+              {t("constraints_now", {
+                water: t(`constraint_${missionState.constraints.water}`),
+                energy: t(`constraint_${missionState.constraints.energy}`),
+                area: t(`constraint_${missionState.constraints.area}`),
+              })}
             </div>
           </div>
 
@@ -833,31 +881,31 @@ const Simulation = () => {
             <div className="flex items-center gap-2">
               <Play className="h-4 w-4 text-neon-orange" />
               <h2 className="text-[10px] font-mono uppercase tracking-[0.24em] text-muted-foreground">
-                Event Controls
+                {t("event_controls")}
               </h2>
             </div>
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1">
-                <label className="text-[10px] font-mono uppercase tracking-wider text-neon-cyan">Water Drop</label>
+                <label className="text-[10px] font-mono uppercase tracking-wider text-neon-cyan">{t("water_drop")}</label>
                 <Input value={waterDrop} onChange={(event) => setWaterDrop(event.target.value)} type="number" min={0} max={100} className="h-9 border-glass-border bg-muted/50" placeholder="0-100" />
               </div>
               <div className="space-y-1">
-                <label className="text-[10px] font-mono uppercase tracking-wider text-neon-gold">Energy Drop</label>
+                <label className="text-[10px] font-mono uppercase tracking-wider text-neon-gold">{t("energy_drop")}</label>
                 <Input value={energyDrop} onChange={(event) => setEnergyDrop(event.target.value)} type="number" min={0} max={100} className="h-9 border-glass-border bg-muted/50" placeholder="0-100" />
               </div>
               <div className="space-y-1">
-                <label className="text-[10px] font-mono uppercase tracking-wider text-neon-red">Contamination</label>
+                <label className="text-[10px] font-mono uppercase tracking-wider text-neon-red">{t("contamination")}</label>
                 <Input value={contamination} onChange={(event) => setContamination(event.target.value)} type="number" min={0} max={100} className="h-9 border-glass-border bg-muted/50" placeholder="0-100" />
               </div>
               <div className="space-y-1 sm:col-span-2">
-                <label className="text-[10px] font-mono uppercase tracking-wider text-neon-purple">Yield Drop</label>
-                <Input value={yieldDrop} onChange={(event) => setYieldDrop(event.target.value)} type="number" min={0} max={100} className="h-9 border-glass-border bg-muted/50" placeholder="Percent reduction applied to the active crop layer" />
+                <label className="text-[10px] font-mono uppercase tracking-wider text-neon-purple">{t("yield_drop")}</label>
+                <Input value={yieldDrop} onChange={(event) => setYieldDrop(event.target.value)} type="number" min={0} max={100} className="h-9 border-glass-border bg-muted/50" placeholder={t("yield_drop_placeholder")} />
               </div>
             </div>
 
             <div className="rounded-lg border border-glass-border bg-black/10 px-3 py-2 text-xs text-muted-foreground">
-              Each step advances one week. Leave the fields empty to run baseline load only.
+              {t("baseline_load_helper")}
             </div>
             <div
               className={`rounded-lg border px-3 py-2 text-xs ${
@@ -876,7 +924,7 @@ const Simulation = () => {
               className="mt-auto h-10 bg-primary font-bold uppercase tracking-wider text-primary-foreground hover:bg-primary/90"
             >
               {isApplyingStep ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FlaskConical className="mr-2 h-4 w-4" />}
-              {isApplyingStep ? "Advancing Week" : simulationStatus === "running" ? "Next Week" : "Simulation Closed"}
+              {isApplyingStep ? t("advancing_week") : simulationStatus === "running" ? t("next_week") : t("simulation_closed")}
             </Button>
           </div>
         </div>
@@ -886,7 +934,7 @@ const Simulation = () => {
             <div className="flex items-center gap-2">
               <Waves className="h-4 w-4 text-neon-cyan" />
               <h2 className="text-[10px] font-mono uppercase tracking-[0.24em] text-muted-foreground">
-                Weekly Outcome
+                {t("weekly_outcome")}
               </h2>
             </div>
             <div
@@ -896,7 +944,7 @@ const Simulation = () => {
                   : "border-glass-border bg-muted/10 text-foreground/80"
               }`}
             >
-              <span className="font-mono uppercase tracking-wider text-neon-cyan">Impact Snapshot:</span>{" "}
+              <span className="font-mono uppercase tracking-wider text-neon-cyan">{t("impact_snapshot")}:</span>{" "}
               {impactSnapshot}
             </div>
             <div
@@ -905,58 +953,60 @@ const Simulation = () => {
               }`}
             >
               <p className="mb-2 text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
-                Week {missionState.time} Summary
+                {t("week_summary", { week: missionState.time })}
               </p>
               <p className="text-xs leading-relaxed text-foreground/80">{adaptationSummary}</p>
             </div>
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <div className={`rounded-lg border border-glass-border bg-muted/10 p-3 ${showUpdateHighlight ? "ring-1 ring-neon-cyan/40" : ""}`}>
-                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Cumulative Risk</p>
+                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">{t("cumulative_risk")}</p>
                 <p className="mt-2 text-sm font-mono text-foreground">
                   {previousRisk !== null ? `${previousRisk.toFixed(2)}% -> ${currentRisk.toFixed(2)}%` : `${currentRisk.toFixed(2)}%`}
                 </p>
                 <p className="mt-1 text-[10px] font-mono text-muted-foreground">
-                  Start baseline: {initialRisk.toFixed(2)}%
+                  {t("start_baseline")}: {initialRisk.toFixed(2)}%
                 </p>
-                <p className={`mt-1 text-xs font-mono ${riskTrend === "Increased" ? "text-neon-red" : riskTrend === "Decreased" ? "text-neon-green" : "text-muted-foreground"}`}>
+                <p className={`mt-1 text-xs font-mono ${riskDeltaIndicator.tone}`}>
                   {riskTrend}
-                  {typeof riskDelta === "number" && (
+                  {riskDeltaIndicator.deltaLabel && (
                     <span className="ml-2">
-                      {formatDeltaArrow(riskDelta).arrow} {formatDeltaArrow(riskDelta).label}
+                      {riskDeltaIndicator.arrow} {riskDeltaIndicator.deltaLabel}
                     </span>
                   )}
                 </p>
               </div>
               <div className="rounded-lg border border-glass-border bg-muted/10 p-3">
-                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Plant System</p>
+                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">{t("plant_system")}</p>
                 <p className="mt-2 text-sm font-mono text-foreground">
-                  {previousPlantSystem ? `${formatLabel(previousPlantSystem)} -> ${formatLabel(currentPlantSystem || "unknown")}` : formatLabel(currentPlantSystem || "unknown")}
+                  {previousPlantSystem ? `${formatLabel(previousPlantSystem)} -> ${formatLabel(currentPlantSystem || t("unknown"))}` : formatLabel(currentPlantSystem || t("unknown"))}
                 </p>
                 <p className="mt-1 text-xs font-mono text-muted-foreground">
-                  {previousPlantSystem && previousPlantSystem !== currentPlantSystem ? "System shifted" : "System held"}
+                  {previousPlantSystem && previousPlantSystem !== currentPlantSystem ? t("system_shifted") : t("system_held")}
                 </p>
               </div>
               <div className="rounded-lg border border-glass-border bg-muted/10 p-3">
-                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Stack Transition</p>
+                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">{t("stack_transition")}</p>
                 <p className="mt-2 text-xs leading-relaxed text-foreground">
                   {previousStackLabel ? `${previousStackLabel} -> ${currentStackLabel}` : currentStackLabel}
                 </p>
                 <p className="mt-1 text-xs font-mono text-muted-foreground">
-                  {previousStackLabel && previousStackLabel !== currentStackLabel ? "Layer change detected" : "Current stack retained"}
+                  {previousStackLabel && previousStackLabel !== currentStackLabel ? t("layer_change_detected") : t("current_stack_retained")}
                 </p>
               </div>
               <div className="rounded-lg border border-glass-border bg-muted/10 p-3">
-                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Current Week</p>
+                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">{t("current_week")}</p>
                 <p className="mt-2 text-lg font-mono text-foreground">{missionState.time} / {maxWeeks}</p>
                 <p className="mt-1 text-xs font-mono text-muted-foreground">
-                  {latestEvents ? Object.values(latestEvents).filter((value) => value !== null && value !== undefined).length : 0} active weekly event(s)
+                  {t("active_weekly_events", {
+                    count: latestEvents ? Object.values(latestEvents).filter((value) => value !== null && value !== undefined).length : 0,
+                  })}
                 </p>
               </div>
             </div>
 
             <div className="min-h-0 flex-1 overflow-auto rounded-lg border border-glass-border bg-muted/10 p-3">
-              <p className="mb-2 text-[10px] font-mono uppercase tracking-wider text-muted-foreground">System Changes</p>
+              <p className="mb-2 text-[10px] font-mono uppercase tracking-wider text-muted-foreground">{t("system_changes")}</p>
               {humanSystemChanges.length > 0 ? (
                 <div className="space-y-2 text-xs text-foreground/80">
                   {humanSystemChanges.map((change) => (
@@ -965,13 +1015,13 @@ const Simulation = () => {
                 </div>
               ) : (
                 <p className="text-xs text-muted-foreground">
-                  No stack reconfiguration was required this week.
+                  {t("no_stack_reconfiguration")}
                 </p>
               )}
             </div>
 
             <div className="min-h-0 overflow-auto rounded-lg border border-glass-border bg-muted/10 p-3">
-              <p className="mb-2 text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Layer Changes</p>
+              <p className="mb-2 text-[10px] font-mono uppercase tracking-wider text-muted-foreground">{t("layer_changes")}</p>
               {layerTransitions.some((item) => item.changed) ? (
                 <div className="space-y-2 text-xs text-foreground/80">
                   {layerTransitions
@@ -994,17 +1044,17 @@ const Simulation = () => {
                             {rankDirection === "up" ? (
                               <span className="inline-flex items-center gap-1 text-neon-green">
                                 <ArrowUpRight className="h-3 w-3" />
-                                Rank improved
+                                {t("rank_improved")}
                               </span>
                             ) : rankDirection === "down" ? (
                               <span className="inline-flex items-center gap-1 text-neon-red">
                                 <ArrowDownRight className="h-3 w-3" />
-                                Rank dropped
+                                {t("rank_dropped")}
                               </span>
                             ) : (
                               <span className="inline-flex items-center gap-1 text-muted-foreground">
                                 <ArrowRight className="h-3 w-3" />
-                                Re-evaluated
+                                {t("reevaluated")}
                               </span>
                             )}
                           </div>
@@ -1012,10 +1062,10 @@ const Simulation = () => {
                             {formatLabel(item.previousName)} <ArrowRight className="mx-1 inline h-3 w-3" />
                             {formatLabel(item.currentName)}
                           </p>
-                          <p className="mt-1 text-muted-foreground">
-                            Rank {item.previousRank ? `#${item.previousRank}` : "N/A"}{" "}
+                        <p className="mt-1 text-muted-foreground">
+                            {t("rank_label")} {item.previousRank ? `#${item.previousRank}` : t("n_a")}{" "}
                             <ArrowRight className="mx-1 inline h-3 w-3" />
-                            {item.currentRank ? `#${item.currentRank}` : "N/A"}
+                            {item.currentRank ? `#${item.currentRank}` : t("n_a")}
                           </p>
                         </div>
                       );
@@ -1023,7 +1073,7 @@ const Simulation = () => {
                 </div>
               ) : (
                 <p className="text-xs text-muted-foreground">
-                  No layer switch or visible rank shift occurred this week.
+                  {t("no_layer_shift")}
                 </p>
               )}
             </div>
@@ -1033,16 +1083,16 @@ const Simulation = () => {
             <div className="flex items-center gap-2">
               <ShieldAlert className="h-4 w-4 text-neon-orange" />
               <h2 className="text-[10px] font-mono uppercase tracking-[0.24em] text-muted-foreground">
-                State Trace
+                {t("state_trace")}
               </h2>
             </div>
 
             <div className="rounded-lg border border-glass-border bg-muted/10 p-3">
               <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
-                Validation Brief
+                {t("validation_brief")}
               </p>
               <p className="mt-2 text-xs leading-relaxed text-foreground/85">
-                {executiveSummary || "The simulation is validating the current deterministic mission plan."}
+                {executiveSummary || t("validation_brief_default")}
               </p>
             </div>
 
@@ -1054,30 +1104,30 @@ const Simulation = () => {
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="rounded-lg border border-glass-border bg-muted/10 p-3">
-                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Active Events</p>
+                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">{t("active_events")}</p>
                 {latestEvents ? (
                   <div className="mt-2 space-y-1 text-xs text-foreground/80">
                     {Object.entries(latestEvents)
                       .filter(([, value]) => value !== null && value !== undefined)
                       .map(([key, value]) => (
                         <p key={key}>
-                          {formatLabel(key)}: <span className="text-foreground">{String(value)}</span>
+                          {t(eventLabelKey(key as keyof MissionEventsPayload))}: <span className="text-foreground">{String(value)}</span>
                         </p>
                       ))}
                   </div>
                 ) : (
-                  <p className="mt-2 text-xs text-muted-foreground">No events applied yet in this simulation session.</p>
+                  <p className="mt-2 text-xs text-muted-foreground">{t("no_events_applied")}</p>
                 )}
               </div>
 
               <div className="rounded-lg border border-glass-border bg-muted/10 p-3">
-                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Stability Cues</p>
+                <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">{t("stability_cues")}</p>
                 <div className="mt-2 space-y-1 text-xs text-foreground/80">
                   {improvementCues.slice(0, 3).map((item) => (
                     <p key={item}>{item}</p>
                   ))}
                   {improvementCues.length === 0 && (
-                    <p className="text-muted-foreground">No additional stability cue was raised for the current state.</p>
+                    <p className="text-muted-foreground">{t("no_stability_cue")}</p>
                   )}
                 </div>
               </div>
@@ -1085,11 +1135,11 @@ const Simulation = () => {
 
             <div className="mt-auto grid grid-cols-1 gap-2 text-[11px] font-mono text-muted-foreground sm:grid-cols-2">
               <div className="rounded-lg border border-glass-border bg-muted/10 p-3">
-                <p>Mission ID</p>
+                <p>{t("mission_id")}</p>
                 <p className="mt-1 break-all text-foreground">{missionState.mission_id}</p>
               </div>
               <div className="rounded-lg border border-glass-border bg-muted/10 p-3">
-                <p>Reference Note</p>
+                <p>{t("reference_note")}</p>
                 <p className="mt-1 text-foreground">
                   {alternativeText}
                 </p>
@@ -1102,7 +1152,7 @@ const Simulation = () => {
           <div className="glass-panel flex min-h-[120px] min-w-0 flex-col gap-2 overflow-hidden p-3">
             <div className="flex items-center gap-2">
               <Waves className="h-4 w-4 text-neon-cyan" />
-              <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Water Margin</span>
+              <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">{t("water_margin")}</span>
             </div>
             <p className="text-2xl font-mono text-foreground">{Math.round(missionState.resources.water)}%</p>
             {previousSession && (
@@ -1112,17 +1162,20 @@ const Simulation = () => {
               </p>
             )}
             <p className="text-xs font-mono text-neon-cyan">
-              Recovered Water: {recoveredWater.toFixed(2)}%
+              {t("recovered_water")}: {recoveredWater.toFixed(2)}%
             </p>
             <p className="text-[10px] font-mono text-muted-foreground">
-              Queue: {recoveryQueueSize} batch(es) | Cycle: {recoveryCycleWeeks} week(s) | Rate:{" "}
-              {Math.round(recoveryRate * 100)}%
+              {t("recovery_queue", {
+                count: recoveryQueueSize,
+                weeks: recoveryCycleWeeks,
+                rate: Math.round(recoveryRate * 100),
+              })}
             </p>
           </div>
           <div className="glass-panel flex min-h-[120px] min-w-0 flex-col gap-2 overflow-hidden p-3">
             <div className="flex items-center gap-2">
               <Zap className="h-4 w-4 text-neon-gold" />
-              <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Energy Margin</span>
+              <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">{t("energy_margin")}</span>
             </div>
             <p className="text-2xl font-mono text-foreground">{Math.round(missionState.resources.energy)}%</p>
             {previousSession && (
@@ -1132,13 +1185,17 @@ const Simulation = () => {
               </p>
             )}
             <p className="text-xs font-mono text-neon-gold">
-              -{consumedEnergy.toFixed(2)} load | +{solarEnergy.toFixed(2)} solar | +{photosynthesisEnergy.toFixed(2)} photosynthesis
+              {t("energy_flow", {
+                load: consumedEnergy.toFixed(2),
+                solar: solarEnergy.toFixed(2),
+                photo: photosynthesisEnergy.toFixed(2),
+              })}
             </p>
           </div>
           <div className="glass-panel flex min-h-[120px] min-w-0 flex-col gap-2 overflow-hidden p-3">
             <div className="flex items-center gap-2">
               <ShieldAlert className="h-4 w-4 text-neon-purple" />
-              <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Area Margin</span>
+              <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">{t("area_margin")}</span>
             </div>
             <p className="text-2xl font-mono text-foreground">{Math.round(missionState.resources.area)}%</p>
             {previousSession && (

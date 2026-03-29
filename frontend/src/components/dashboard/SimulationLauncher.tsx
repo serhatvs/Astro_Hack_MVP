@@ -3,6 +3,7 @@ import { Loader2, Play } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useI18n } from "@/lib/i18n";
 import type { RecommendationResponse } from "@/lib/types";
 
 interface SimulationLauncherSelection {
@@ -21,6 +22,7 @@ const formatLabel = (value: string) =>
   value.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
 
 const SimulationLauncher = ({ recommendation, isStarting, onStart }: SimulationLauncherProps) => {
+  const { t } = useI18n();
   const [selectedCrop, setSelectedCrop] = useState("");
   const [selectedAlgae, setSelectedAlgae] = useState("");
   const [selectedMicrobial, setSelectedMicrobial] = useState("");
@@ -60,23 +62,23 @@ const SimulationLauncher = ({ recommendation, isStarting, onStart }: SimulationL
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="space-y-1">
           <h3 className="text-[11px] font-mono uppercase tracking-[0.24em] text-muted-foreground">
-            Start Simulation
+            {t("start_simulation")}
           </h3>
           <p className="max-w-3xl text-xs text-foreground/75">
-            Validate the recommended ecosystem over time. Adjust the crop, algae, and microbial layers before launch.
+            {t("launcher_description")}
           </p>
         </div>
         <div className="rounded border border-glass-border bg-muted/20 px-3 py-1.5 text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
-          {recommendation ? "Plan ready" : "Generate plan first"}
+          {recommendation ? t("plan_ready") : t("generate_plan_first_badge")}
         </div>
       </div>
 
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
         <div className="min-w-0 space-y-1">
-          <label className="text-[10px] font-mono uppercase tracking-widest text-neon-green">Crop Layer</label>
+          <label className="text-[10px] font-mono uppercase tracking-widest text-neon-green">{t("crop_layer")}</label>
           <Select value={selectedCrop} onValueChange={setSelectedCrop} disabled={!recommendation || isStarting}>
             <SelectTrigger className="h-9 border-glass-border bg-muted/50 text-sm text-foreground">
-              <SelectValue placeholder="Choose crop" />
+              <SelectValue placeholder={t("choose_crop")} />
             </SelectTrigger>
             <SelectContent className="border-glass-border bg-card">
               {cropOptions.map((candidate) => (
@@ -89,10 +91,10 @@ const SimulationLauncher = ({ recommendation, isStarting, onStart }: SimulationL
         </div>
 
         <div className="min-w-0 space-y-1">
-          <label className="text-[10px] font-mono uppercase tracking-widest text-neon-cyan">Algae Layer</label>
+          <label className="text-[10px] font-mono uppercase tracking-widest text-neon-cyan">{t("algae_layer")}</label>
           <Select value={selectedAlgae} onValueChange={setSelectedAlgae} disabled={!recommendation || isStarting}>
             <SelectTrigger className="h-9 border-glass-border bg-muted/50 text-sm text-foreground">
-              <SelectValue placeholder="Choose algae" />
+              <SelectValue placeholder={t("choose_algae")} />
             </SelectTrigger>
             <SelectContent className="border-glass-border bg-card">
               {algaeOptions.map((candidate) => (
@@ -106,7 +108,7 @@ const SimulationLauncher = ({ recommendation, isStarting, onStart }: SimulationL
 
         <div className="min-w-0 space-y-1">
           <label className="text-[10px] font-mono uppercase tracking-widest text-neon-orange">
-            Microbial Layer
+            {t("microbial_layer")}
           </label>
           <Select
             value={selectedMicrobial}
@@ -114,7 +116,7 @@ const SimulationLauncher = ({ recommendation, isStarting, onStart }: SimulationL
             disabled={!recommendation || isStarting}
           >
             <SelectTrigger className="h-9 border-glass-border bg-muted/50 text-sm text-foreground">
-              <SelectValue placeholder="Choose microbial support" />
+              <SelectValue placeholder={t("choose_microbial_support")} />
             </SelectTrigger>
             <SelectContent className="border-glass-border bg-card">
               {microbialOptions.map((candidate) => (
@@ -140,7 +142,7 @@ const SimulationLauncher = ({ recommendation, isStarting, onStart }: SimulationL
             className="h-9 w-full bg-primary font-bold uppercase tracking-wider text-primary-foreground pulse-glow hover:bg-primary/90"
           >
             {isStarting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
-            {isStarting ? "Starting Simulation" : "Start Simulation"}
+            {isStarting ? t("starting_simulation") : t("start_simulation")}
           </Button>
         </div>
       </div>
@@ -148,13 +150,12 @@ const SimulationLauncher = ({ recommendation, isStarting, onStart }: SimulationL
       <div className="rounded-lg border border-glass-border bg-black/10 px-3 py-2">
         {selectedSummary ? (
           <div className="space-y-1">
-            <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Launch Stack</p>
+            <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">{t("launch_stack")}</p>
             <p className="text-sm text-foreground/85">{selectedSummary}</p>
           </div>
         ) : (
           <p className="text-xs text-muted-foreground">
-            Generate a mission plan first, then adjust the recommended biological layers before starting the
-            validation run.
+            {t("launcher_empty")}
           </p>
         )}
       </div>
