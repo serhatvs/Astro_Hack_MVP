@@ -565,7 +565,8 @@ class RecommendationEngine:
             temporary_penalties=temporary_penalties,
             weight_adjustments=weight_adjustments,
         )
-        top_ranked_crops = ranked_crops[:3]
+        analysis_ranked_crops = ranked_crops[:3]
+        top_ranked_crops = ranked_crops[:5]
 
         crop_recommendations: list[CropRecommendation] = []
         for item in top_ranked_crops:
@@ -583,8 +584,8 @@ class RecommendationEngine:
                 )
             )
 
-        resource_plan = self.resource_planner.build_plan(top_ranked_crops, selected_grow_system)
-        risk_analysis = evaluate_risk(mission, selected_grow_system, top_ranked_crops)
+        resource_plan = self.resource_planner.build_plan(analysis_ranked_crops, selected_grow_system)
+        risk_analysis = evaluate_risk(mission, selected_grow_system, analysis_ranked_crops)
 
         system_reasoning = self._build_integrated_system_reasoning(
             mission=mission,

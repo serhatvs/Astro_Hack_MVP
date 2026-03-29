@@ -124,6 +124,10 @@ export const translations = {
     selected_detail_incomplete:
       "Selected ecosystem detail fields were incomplete, so the simulation is falling back to metrics and mission-state data only.",
     mission_fit: "Mission Fit",
+    mission_score: "Mission Score",
+    compatibility: "Compatibility",
+    strengths: "Strengths",
+    tradeoffs_label: "Tradeoffs",
     risk: "Risk",
     domain_score: "Domain Score",
     current_rank: "Current Rank",

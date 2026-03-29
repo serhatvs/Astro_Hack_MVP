@@ -5,13 +5,13 @@ import { toast } from "sonner";
 
 import AuthPanel from "@/components/auth/AuthPanel";
 import MissionInput from "@/components/dashboard/MissionInput";
-import RecommendationStackAccordion from "@/components/dashboard/RecommendationStackAccordion";
+import RankedCropAccordion from "@/components/dashboard/RankedCropAccordion";
 import LiveTelemetry from "@/components/dashboard/LiveTelemetry";
 import LanguageToggle from "@/components/LanguageToggle";
 import SimulationLauncher from "@/components/dashboard/SimulationLauncher";
 import { fetchDemoCases, isApiError, recommendMission, startSimulation } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
-import { buildLayerSummaries, formatLabel, getExecutiveSummary, getRecommendationAiState } from "@/lib/mission-view";
+import { formatLabel, getExecutiveSummary, getRecommendationAiState } from "@/lib/mission-view";
 import {
   clearSimulationSession,
   isSimulationSessionTerminal,
@@ -140,7 +140,6 @@ const Index = () => {
 
   const currentRecommendation = recommendation;
   const aiState = getRecommendationAiState(currentRecommendation);
-  const layerSummaries = buildLayerSummaries(currentRecommendation, t);
   const executiveSummary = getExecutiveSummary(currentRecommendation);
   const hasRecommendation = Boolean(currentRecommendation);
   const generateRecommendation = async (missionPayload: MissionPayload, demoCase: DemoCase | null = null) => {
@@ -357,10 +356,10 @@ const Index = () => {
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1.3fr_0.7fr]">
               <div className="rounded-lg border border-glass-border bg-black/10 p-3">
                 <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
-                  {t("recommended_validation_stack")}
+                  Ranked Crop Candidates
                 </p>
-                <RecommendationStackAccordion
-                  layers={layerSummaries}
+                <RankedCropAccordion
+                  crops={currentRecommendation.top_crops}
                   emptyMessage={t("recommendation_missing_stack")}
                 />
               </div>

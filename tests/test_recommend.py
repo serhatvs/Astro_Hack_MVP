@@ -44,8 +44,9 @@ def test_recommend_returns_top_three_sorted_with_ui_fields(monkeypatch) -> None:
     assert data["ranked_candidates"]["algae"]
     assert data["ranked_candidates"]["microbial"]
     assert data["ranked_candidates"]["crop"][0]["rank"] == 1
-    assert len(data["top_crops"]) == 3
+    assert len(data["top_crops"]) == 5
     assert data["top_crops"][0]["score"] >= data["top_crops"][1]["score"] >= data["top_crops"][2]["score"]
+    assert data["top_crops"][2]["score"] >= data["top_crops"][3]["score"] >= data["top_crops"][4]["score"]
     assert all(item["reason"] for item in data["top_crops"])
     assert all(len(item["strengths"]) == 2 for item in data["top_crops"])
     assert all(len(item["tradeoffs"]) == 1 for item in data["top_crops"])
@@ -85,7 +86,7 @@ def test_simulate_returns_ranking_diff_and_risk_delta(monkeypatch) -> None:
     assert data["new_mission_status"] in {"NOMINAL", "WATCH", "CRITICAL"}
     assert data["previous_top_crop"]
     assert data["new_top_crop"]
-    assert len(data["updated_recommendation"]["top_crops"]) == 3
+    assert len(data["updated_recommendation"]["top_crops"]) == 5
     assert data["updated_recommendation"]["executive_summary"]
     assert data["updated_recommendation"]["ui_enhanced"]["adaptation_summary"]
     assert data["updated_recommendation"]["ranked_candidates"]["algae"]
