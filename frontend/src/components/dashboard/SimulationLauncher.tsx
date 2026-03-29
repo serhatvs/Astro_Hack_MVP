@@ -4,7 +4,7 @@ import { Loader2, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useI18n } from "@/lib/i18n";
-import type { RecommendationResponse } from "@/lib/types";
+import type { DemoSelection, RecommendationResponse } from "@/lib/types";
 
 interface SimulationLauncherSelection {
   selected_crop: string;
@@ -14,6 +14,7 @@ interface SimulationLauncherSelection {
 
 interface SimulationLauncherProps {
   recommendation: RecommendationResponse | null;
+  preferredSelection?: DemoSelection | null;
   isStarting: boolean;
   onStart: (selection: SimulationLauncherSelection) => void;
 }
@@ -21,7 +22,7 @@ interface SimulationLauncherProps {
 const formatLabel = (value: string) =>
   value.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
 
-const SimulationLauncher = ({ recommendation, isStarting, onStart }: SimulationLauncherProps) => {
+const SimulationLauncher = ({ recommendation, preferredSelection = null, isStarting, onStart }: SimulationLauncherProps) => {
   const { t } = useI18n();
   const [selectedCrop, setSelectedCrop] = useState("");
   const [selectedAlgae, setSelectedAlgae] = useState("");
@@ -40,14 +41,33 @@ const SimulationLauncher = ({ recommendation, isStarting, onStart }: SimulationL
       microbialOptions.length,
   );
 
+  const resolvedPreferredSelection = useMemo(() => {
+    if (!recommendation || !preferredSelection) {
+      return null;
+    }
+
+    const cropAvailable = cropOptions.some((candidate) => candidate.name === preferredSelection.selected_crop);
+    const algaeAvailable = algaeOptions.some((candidate) => candidate.name === preferredSelection.selected_algae);
+    const microbialAvailable = microbialOptions.some((candidate) => candidate.name === preferredSelection.selected_microbial);
+
+    if (!cropAvailable || !algaeAvailable || !microbialAvailable) {
+      return null;
+    }
+
+    return preferredSelection;
+  }, [algaeOptions, cropOptions, microbialOptions, preferredSelection, recommendation]);
+
   useEffect(() => {
-    setSelectedCrop(recommendation?.selected_system?.crop.name ?? "");
-    setSelectedAlgae(recommendation?.selected_system?.algae.name ?? "");
-    setSelectedMicrobial(recommendation?.selected_system?.microbial.name ?? "");
+    setSelectedCrop(resolvedPreferredSelection?.selected_crop ?? recommendation?.selected_system?.crop.name ?? "");
+    setSelectedAlgae(resolvedPreferredSelection?.selected_algae ?? recommendation?.selected_system?.algae.name ?? "");
+    setSelectedMicrobial(resolvedPreferredSelection?.selected_microbial ?? recommendation?.selected_system?.microbial.name ?? "");
   }, [
     recommendation?.selected_system?.crop.name,
     recommendation?.selected_system?.algae.name,
     recommendation?.selected_system?.microbial.name,
+    resolvedPreferredSelection?.selected_crop,
+    resolvedPreferredSelection?.selected_algae,
+    resolvedPreferredSelection?.selected_microbial,
   ]);
 
   const selectedSummary = useMemo(() => {

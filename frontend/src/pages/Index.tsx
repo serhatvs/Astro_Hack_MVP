@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -7,7 +7,7 @@ import MissionInput from "@/components/dashboard/MissionInput";
 import LiveTelemetry from "@/components/dashboard/LiveTelemetry";
 import LanguageToggle from "@/components/LanguageToggle";
 import SimulationLauncher from "@/components/dashboard/SimulationLauncher";
-import { isApiError, recommendMission, startSimulation } from "@/lib/api";
+import { fetchDemoCases, isApiError, recommendMission, startSimulation } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import { buildLayerSummaries, formatLabel, getExecutiveSummary, isGeminiUsed } from "@/lib/mission-view";
 import {
@@ -19,6 +19,7 @@ import {
 import type {
   BackendGoal,
   ConstraintLevel,
+  DemoCase,
   Duration,
   Environment,
   MissionPayload,
@@ -30,6 +31,12 @@ const goalMap: Record<UiGoal, BackendGoal> = {
   balanced: "balanced",
   calorie: "calorie_max",
   water: "water_efficiency",
+  low_maintenance: "low_maintenance",
+};
+const inverseGoalMap: Record<BackendGoal, UiGoal> = {
+  balanced: "balanced",
+  calorie_max: "calorie",
+  water_efficiency: "water",
   low_maintenance: "low_maintenance",
 };
 
@@ -95,6 +102,28 @@ const Index = () => {
   const [isStartingSimulation, setIsStartingSimulation] = useState(false);
   const [recommendation, setRecommendation] = useState<RecommendationResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [demoCases, setDemoCases] = useState<DemoCase[]>([]);
+  const [activeDemoCase, setActiveDemoCase] = useState<DemoCase | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+
+    void fetchDemoCases()
+      .then((cases) => {
+        if (mounted) {
+          setDemoCases(cases);
+        }
+      })
+      .catch(() => {
+        if (mounted) {
+          setDemoCases([]);
+        }
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const buildMissionPayload = (): MissionPayload => ({
     environment,
@@ -112,9 +141,7 @@ const Index = () => {
   const layerSummaries = buildLayerSummaries(currentRecommendation, t);
   const executiveSummary = getExecutiveSummary(currentRecommendation);
   const hasRecommendation = Boolean(currentRecommendation);
-
-  const handleGenerate = async () => {
-    const missionPayload = buildMissionPayload();
+  const generateRecommendation = async (missionPayload: MissionPayload, demoCase: DemoCase | null = null) => {
     if (!isValidMissionPayload(missionPayload)) {
       setError(INVALID_INPUT_MESSAGE);
       toast.error(INVALID_INPUT_MESSAGE);
@@ -128,6 +155,7 @@ const Index = () => {
       const response = await recommendMission(missionPayload);
       clearSimulationSession();
       setRecommendation(response);
+      setActiveDemoCase(demoCase);
       const leadLabel =
         response.selected_system?.crop?.name ||
         response.top_crops?.[0]?.name ||
@@ -143,6 +171,30 @@ const Index = () => {
     } finally {
       setIsGenerating(false);
     }
+  };
+
+  const handleGenerate = async () => {
+    await generateRecommendation(buildMissionPayload(), activeDemoCase);
+  };
+
+  const handleLoadDemoCase = async (demoCase: DemoCase) => {
+    const missionPayload: MissionPayload = {
+      environment: demoCase.environment,
+      duration: demoCase.duration,
+      constraints: demoCase.constraints,
+      goal: demoCase.goal,
+    };
+
+    setEnvironment(demoCase.environment);
+    setDuration(demoCase.duration);
+    setWaterConstraint(demoCase.constraints.water);
+    setEnergyConstraint(demoCase.constraints.energy);
+    setAreaConstraint(demoCase.constraints.area);
+    setGoal(inverseGoalMap[demoCase.goal]);
+    setError(null);
+    setRecommendation(null);
+
+    await generateRecommendation(missionPayload, demoCase);
   };
 
   const handleStartSimulation = async (selection: {
@@ -232,6 +284,9 @@ const Index = () => {
             goal={goal}
             setGoal={setGoal}
             onGenerate={handleGenerate}
+            demoCases={demoCases}
+            activeDemoCaseName={activeDemoCase?.name ?? null}
+            onLoadDemoCase={handleLoadDemoCase}
             isLoading={isGenerating}
           />
 
@@ -246,12 +301,22 @@ const Index = () => {
           <div className="glass-panel flex min-w-0 flex-col gap-4 overflow-hidden p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="space-y-1">
+                {activeDemoCase && (
+                  <div className="mb-2 inline-flex rounded border border-neon-cyan/35 bg-neon-cyan/10 px-2 py-1 text-[10px] font-mono uppercase tracking-wider text-neon-cyan">
+                    {activeDemoCase.name}
+                  </div>
+                )}
                 <h2 className="text-[10px] font-mono uppercase tracking-[0.24em] text-muted-foreground">
                   {t("mission_summary")}
                 </h2>
                 <p className="max-w-4xl text-sm text-foreground/80">
                   {executiveSummary || t("recommendation_prepared")}
                 </p>
+                {activeDemoCase?.expected_outcome && (
+                  <p className="max-w-4xl text-xs text-muted-foreground">
+                    {activeDemoCase.expected_outcome}
+                  </p>
+                )}
               </div>
               <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono text-muted-foreground">
                 <span
@@ -335,6 +400,7 @@ const Index = () => {
         <div className="min-w-0 overflow-hidden rounded-xl">
           <SimulationLauncher
             recommendation={currentRecommendation}
+            preferredSelection={activeDemoCase?.selected_stack ?? null}
             isStarting={isStartingSimulation}
             onStart={handleStartSimulation}
           />

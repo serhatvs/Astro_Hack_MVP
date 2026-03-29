@@ -2,7 +2,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
-import type { ConstraintLevel } from "@/lib/types";
+import type { ConstraintLevel, DemoCase } from "@/lib/types";
 
 interface MissionInputProps {
   environment: string;
@@ -18,6 +18,9 @@ interface MissionInputProps {
   goal: string;
   setGoal: (v: string) => void;
   onGenerate: () => void;
+  demoCases?: DemoCase[];
+  activeDemoCaseName?: string | null;
+  onLoadDemoCase?: (demoCase: DemoCase) => void;
   isLoading: boolean;
 }
 
@@ -29,12 +32,69 @@ const MissionInput = ({
   areaConstraint, setAreaConstraint,
   goal, setGoal,
   onGenerate, isLoading,
+  demoCases = [],
+  activeDemoCaseName = null,
+  onLoadDemoCase,
 }: MissionInputProps) => {
   const { t } = useI18n();
   const formatConstraint = (value: ConstraintLevel) => t(`constraint_${value}`);
 
   return (
     <div className="flex min-w-0 flex-col gap-3">
+      {demoCases.length > 0 && (
+        <div className="rounded-lg border border-glass-border bg-black/10 p-3">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-mono uppercase tracking-[0.24em] text-muted-foreground">
+                Demo Scenarios
+              </p>
+              <p className="mt-1 text-xs text-foreground/70">
+                Load a deterministic preset for a fast live demo or repeatable test run.
+              </p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
+            {demoCases.map((demoCase) => {
+              const isActive = activeDemoCaseName === demoCase.name;
+
+              return (
+                <div
+                  key={demoCase.name}
+                  className={`rounded-lg border p-3 transition-colors ${
+                    isActive
+                      ? "border-neon-cyan/40 bg-neon-cyan/10"
+                      : "border-glass-border bg-muted/10"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <p className="text-xs font-semibold text-foreground">{demoCase.name}</p>
+                      <p className="text-xs leading-relaxed text-foreground/70">{demoCase.description}</p>
+                    </div>
+                    {isActive && (
+                      <span className="rounded border border-neon-cyan/35 bg-neon-cyan/10 px-2 py-1 text-[10px] font-mono uppercase tracking-wider text-neon-cyan">
+                        Active
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">
+                    {demoCase.expected_outcome}
+                  </p>
+                  <Button
+                    type="button"
+                    onClick={() => onLoadDemoCase?.(demoCase)}
+                    disabled={isLoading}
+                    className="mt-3 h-9 w-full bg-secondary text-secondary-foreground hover:bg-secondary/80"
+                  >
+                    Load Scenario
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <div className="min-w-0 space-y-1">
           <label className="text-xs font-mono uppercase tracking-wider text-muted-foreground">{t("environment")}</label>

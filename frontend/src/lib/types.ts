@@ -12,8 +12,17 @@ export type RiskLevel = "low" | "moderate" | "high";
 export type MissionStatus = "NOMINAL" | "WATCH" | "CRITICAL";
 export type ApiStatus = "idle" | "loading" | "ready" | "warning" | "error";
 
+export interface DemoSelection {
+  selected_crop: string;
+  selected_algae: string;
+  selected_microbial: string;
+}
+
 export interface DemoCase {
   name: string;
+  description: string;
+  expected_outcome: string;
+  selected_stack?: DemoSelection | null;
   environment: Environment;
   duration: Duration;
   constraints: MissionConstraints;

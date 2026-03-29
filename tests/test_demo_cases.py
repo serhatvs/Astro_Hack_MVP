@@ -12,7 +12,9 @@ def test_demo_cases_endpoint_returns_three_named_presets() -> None:
     assert response.status_code == 200
     data = response.json()
     assert [item["name"] for item in data] == [
-        "Mars Water Crisis",
-        "ISS Low Maintenance Mission",
-        "Moon Long Duration Calorie Mission",
+        "Demo Scenario: Strong System",
+        "Demo Scenario: Average System",
+        "Demo Scenario: Failure Case",
     ]
+    assert data[0]["expected_outcome"]
+    assert data[0]["selected_stack"]["selected_crop"]

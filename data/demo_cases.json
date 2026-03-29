@@ -1,35 +1,56 @@
 [
   {
-    "name": "Mars Water Crisis",
+    "name": "Demo Scenario: Strong System",
+    "description": "Low-constraint Mars mission with a stable balanced stack. This is the safest quick-start demo.",
     "environment": "mars",
     "duration": "long",
     "constraints": {
       "water": "low",
-      "energy": "medium",
-      "area": "medium"
-    },
-    "goal": "water_efficiency"
-  },
-  {
-    "name": "ISS Low Maintenance Mission",
-    "environment": "iss",
-    "duration": "medium",
-    "constraints": {
-      "water": "medium",
-      "energy": "medium",
+      "energy": "low",
       "area": "low"
     },
-    "goal": "low_maintenance"
+    "goal": "balanced",
+    "expected_outcome": "Expected outcome: full mission completion or long survival under baseline conditions.",
+    "selected_stack": {
+      "selected_crop": "Lactuca sativa (Marul)",
+      "selected_algae": "Chlorella vulgaris",
+      "selected_microbial": "Saccharomyces boulardii"
+    }
   },
   {
-    "name": "Moon Long Duration Calorie Mission",
-    "environment": "moon",
+    "name": "Demo Scenario: Average System",
+    "description": "Medium-constraint Mars mission with a workable but average stack for pressure-trend demos.",
+    "environment": "mars",
     "duration": "long",
     "constraints": {
       "water": "medium",
       "energy": "medium",
       "area": "medium"
     },
-    "goal": "calorie_max"
+    "goal": "balanced",
+    "expected_outcome": "Expected outcome: visible pressure growth. Clean baseline usually survives, while extra runtime stress can push it toward late failure.",
+    "selected_stack": {
+      "selected_crop": "Solanum lycopersicum (Dwarf Domates)",
+      "selected_algae": "Dunaliella salina",
+      "selected_microbial": "Pseudomonas putida"
+    }
+  },
+  {
+    "name": "Demo Scenario: Failure Case",
+    "description": "High-constraint ISS mission with a poor-fit calorie-focused stack. This is the fast failure demo.",
+    "environment": "iss",
+    "duration": "short",
+    "constraints": {
+      "water": "high",
+      "energy": "high",
+      "area": "high"
+    },
+    "goal": "calorie_max",
+    "expected_outcome": "Expected outcome: early mission failure from rising risk and weak system fit.",
+    "selected_stack": {
+      "selected_crop": "Glycine max (Soya Fasulyesi)",
+      "selected_algae": "Dunaliella salina",
+      "selected_microbial": "Pseudomonas putida"
+    }
   }
 ]
