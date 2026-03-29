@@ -35,7 +35,7 @@ const MissionInput = ({
 
   return (
     <div className="flex min-w-0 flex-col gap-3">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <div className="min-w-0 space-y-1">
           <label className="text-xs font-mono uppercase tracking-wider text-muted-foreground">{t("environment")}</label>
           <Select value={environment} onValueChange={setEnvironment}>
@@ -76,16 +76,6 @@ const MissionInput = ({
               <SelectItem value="water">{t("goal_water")}</SelectItem>
             </SelectContent>
           </Select>
-        </div>
-
-        <div className="flex min-w-0 items-end">
-          <Button
-            onClick={onGenerate}
-            disabled={isLoading}
-            className="w-full h-8 bg-primary text-primary-foreground font-bold text-sm uppercase tracking-wider pulse-glow hover:bg-primary/90 transition-all"
-          >
-            {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : t("generate_plan")}
-          </Button>
         </div>
       </div>
 
@@ -143,6 +133,16 @@ const MissionInput = ({
       <p className="text-[11px] font-mono text-muted-foreground">
         {t("constraint_helper")}
       </p>
+
+      <div className="mt-2 flex justify-center sm:justify-end">
+        <Button
+          onClick={onGenerate}
+          disabled={isLoading}
+          className="h-9 w-full sm:w-auto sm:min-w-[220px] bg-primary text-primary-foreground font-bold text-sm uppercase tracking-wider pulse-glow hover:bg-primary/90 transition-all"
+        >
+          {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : t("generate_plan")}
+        </Button>
+      </div>
     </div>
   );
 };
