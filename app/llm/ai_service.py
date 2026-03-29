@@ -29,7 +29,16 @@ class AIService:
         self.gemini_client = gemini_client or GeminiClient()
         self.summary_model = os.getenv("GEMINI_MODEL_SUMMARY_POLISH", "gemini-2.5-flash-lite")
         self.explanation_model = os.getenv("GEMINI_MODEL_EXPLANATION", "gemini-2.5-flash")
-        self.timeout_seconds = self._read_timeout_seconds()
+        self.recommendation_timeout_seconds = self._read_timeout_seconds(
+            "AI_RECOMMENDATION_TIMEOUT_SECONDS",
+            fallback_env="AI_CALL_TIMEOUT_SECONDS",
+            default_seconds=20.0,
+        )
+        self.summary_timeout_seconds = self._read_timeout_seconds(
+            "AI_SUMMARY_TIMEOUT_SECONDS",
+            fallback_env="AI_CALL_TIMEOUT_SECONDS",
+            default_seconds=8.0,
+        )
         self._cache_lock = Lock()
         self._recommendation_cache: dict[str, GeminiNarrative] = {}
         self._summary_cache: dict[str, UIEnhancedNarrative] = {}
@@ -66,7 +75,7 @@ class AIService:
             ),
             fallback=fallback.model_copy(deep=True),
             task_label="recommendation_explanation",
-            timeout_seconds=self.timeout_seconds,
+            timeout_seconds=self.recommendation_timeout_seconds,
             logger=logger,
         )
         if not narrative.debug_layer.reasoning_summary.endswith(" -gemini"):
@@ -129,7 +138,7 @@ class AIService:
             lambda: self._generate_summary_ui(prompt, fallback_ui, use_ai),
             fallback=fallback_ui.model_copy(deep=True),
             task_label="summary_polish",
-            timeout_seconds=self.timeout_seconds,
+            timeout_seconds=self.summary_timeout_seconds,
             logger=logger,
         )
         if polished_ui.model_dump(mode="json") != fallback_ui.model_dump(mode="json"):
@@ -191,10 +200,20 @@ class AIService:
         with self._cache_lock:
             self._summary_cache[cache_key] = narrative.model_copy(deep=True)
 
-    def _read_timeout_seconds(self) -> float:
-        raw_value = os.getenv("AI_CALL_TIMEOUT_SECONDS", "8")
+    def _read_timeout_seconds(
+        self,
+        env_name: str,
+        *,
+        fallback_env: str | None,
+        default_seconds: float,
+    ) -> float:
+        raw_value = os.getenv(env_name)
+        if raw_value is None and fallback_env:
+            raw_value = os.getenv(fallback_env)
+        if raw_value is None:
+            return default_seconds
         try:
             return max(1.0, float(raw_value))
         except ValueError:
-            logger.warning("Invalid AI_CALL_TIMEOUT_SECONDS=%s; using 8 seconds.", raw_value)
-            return 8.0
+            logger.warning("Invalid %s=%s; using %.1f seconds.", env_name, raw_value, default_seconds)
+            return default_seconds

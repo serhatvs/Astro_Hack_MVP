@@ -179,7 +179,7 @@ def test_ai_service_times_out_and_returns_fallback() -> None:
 
     fallback = _fallback_narrative()
     service = AIService(gemini_client=SlowGeminiClient())
-    service.timeout_seconds = 0.01
+    service.recommendation_timeout_seconds = 0.01
 
     result = service.generate_recommendation_explanation(
         {"request_context": {"source": "recommend"}},
@@ -188,3 +188,13 @@ def test_ai_service_times_out_and_returns_fallback() -> None:
 
     assert result.debug_layer.reasoning_summary == fallback.debug_layer.reasoning_summary
     assert result.ui_layer.executive_summary == fallback.ui_layer.executive_summary
+
+
+def test_ai_service_reads_split_timeout_envs(monkeypatch) -> None:
+    monkeypatch.setenv("AI_RECOMMENDATION_TIMEOUT_SECONDS", "18")
+    monkeypatch.setenv("AI_SUMMARY_TIMEOUT_SECONDS", "6")
+
+    service = AIService(gemini_client=object())  # type: ignore[arg-type]
+
+    assert service.recommendation_timeout_seconds == 18.0
+    assert service.summary_timeout_seconds == 6.0

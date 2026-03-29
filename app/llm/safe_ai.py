@@ -16,7 +16,7 @@ def safe_ai_call(
     *,
     fallback: T,
     task_label: str,
-    timeout_seconds: float = 8.0,
+    timeout_seconds: float = 200.0,
     logger: logging.Logger | None = None,
 ) -> T:
     """Run an AI call with timeout, logging, and deterministic fallback."""

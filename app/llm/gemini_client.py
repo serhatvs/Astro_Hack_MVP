@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 from typing import Any
 
 from app.models.response import GeminiNarrative
@@ -95,6 +96,7 @@ class GeminiClient:
             logger.info("Gemini enabled: sending %s request with model=%s.", task_label, resolved_model)
             client = genai.Client(api_key=self.api_key)
             generation_config = self._build_generation_config(response_schema)
+            started_at = time.monotonic()
             if generation_config is None:
                 response = client.models.generate_content(
                     model=resolved_model,
@@ -119,33 +121,61 @@ class GeminiClient:
         except Exception:
             logger.warning("Gemini request failed for %s; using deterministic fallback.", task_label, exc_info=True)
             return None
+        elapsed = time.monotonic() - started_at
 
         parsed_response = getattr(response, "parsed", None)
         if isinstance(parsed_response, dict):
-            logger.info("Gemini %s succeeded with structured parsed output.", task_label)
+            logger.info(
+                "Gemini %s succeeded with structured parsed output in %.2fs using model=%s.",
+                task_label,
+                elapsed,
+                resolved_model,
+            )
             return parsed_response
 
         text = getattr(response, "text", "") or ""
         if not text.strip():
-            logger.warning("Gemini returned an empty response for %s; using deterministic fallback.", task_label)
+            logger.warning(
+                "Gemini returned an empty response for %s after %.2fs; using deterministic fallback.",
+                task_label,
+                elapsed,
+            )
             return None
 
         extracted_json = self._extract_json_text(text)
         if extracted_json is None:
-            logger.warning("Gemini response did not contain a JSON object for %s; using deterministic fallback.", task_label)
+            logger.warning(
+                "Gemini response did not contain a JSON object for %s after %.2fs; using deterministic fallback.",
+                task_label,
+                elapsed,
+            )
             return None
 
         try:
             parsed = json.loads(extracted_json)
         except json.JSONDecodeError:
-            logger.warning("Gemini JSON parsing failed for %s; using deterministic fallback.", task_label, exc_info=True)
+            logger.warning(
+                "Gemini JSON parsing failed for %s after %.2fs; using deterministic fallback.",
+                task_label,
+                elapsed,
+                exc_info=True,
+            )
             return None
 
         if not isinstance(parsed, dict):
-            logger.warning("Gemini returned non-object JSON for %s; using deterministic fallback.", task_label)
+            logger.warning(
+                "Gemini returned non-object JSON for %s after %.2fs; using deterministic fallback.",
+                task_label,
+                elapsed,
+            )
             return None
 
-        logger.info("Gemini %s succeeded with model=%s.", task_label, resolved_model)
+        logger.info(
+            "Gemini %s succeeded with model=%s in %.2fs.",
+            task_label,
+            resolved_model,
+            elapsed,
+        )
         return parsed
 
     def _build_generation_config(self, response_schema: dict[str, Any] | None) -> dict[str, Any] | None:
