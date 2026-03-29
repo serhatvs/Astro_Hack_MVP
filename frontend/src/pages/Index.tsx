@@ -3,11 +3,13 @@ import { Loader2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
+import AuthPanel from "@/components/auth/AuthPanel";
 import MissionInput from "@/components/dashboard/MissionInput";
 import LiveTelemetry from "@/components/dashboard/LiveTelemetry";
 import LanguageToggle from "@/components/LanguageToggle";
 import SimulationLauncher from "@/components/dashboard/SimulationLauncher";
 import { fetchDemoCases, isApiError, recommendMission, startSimulation } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
 import { buildLayerSummaries, formatLabel, getExecutiveSummary, isGeminiUsed } from "@/lib/mission-view";
 import {
@@ -91,6 +93,7 @@ const resolveUserFacingMessage = (error: unknown, fallback: string) => {
 
 const Index = () => {
   const { t } = useI18n();
+  const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const [environment, setEnvironment] = useState<Environment>("mars");
   const [duration, setDuration] = useState<Duration>("long");
@@ -261,10 +264,13 @@ const Index = () => {
             </div>
 
             <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-start sm:justify-end lg:w-auto">
-              <div className="order-2 sm:order-1 w-full sm:w-[320px] lg:w-[300px]">
+              <div className="order-2 w-full sm:order-1 sm:w-[320px] lg:w-[300px]">
                 <LiveTelemetry />
               </div>
-              <div className="order-1 flex justify-end sm:order-2 sm:self-start">
+              <div className="order-3 w-full sm:order-2 sm:w-[360px] lg:w-[380px]">
+                <AuthPanel />
+              </div>
+              <div className="order-1 flex justify-end sm:order-3 sm:self-start">
                 <LanguageToggle />
               </div>
             </div>
@@ -317,6 +323,11 @@ const Index = () => {
                     {activeDemoCase.expected_outcome}
                   </p>
                 )}
+                {!isAuthenticated && (
+                  <p className="max-w-4xl text-xs text-muted-foreground">
+                    Please log in to continue with AI-enhanced mission explanations. Deterministic planning remains available.
+                  </p>
+                )}
               </div>
               <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono text-muted-foreground">
                 <span
@@ -329,7 +340,7 @@ const Index = () => {
                   {t("ai_insight")}
                 </span>
                 <span className={geminiUsed ? "text-neon-cyan" : "text-muted-foreground"}>
-                  {geminiUsed ? t("enabled") : t("fallback")}
+                  {geminiUsed ? t("enabled") : isAuthenticated ? t("fallback") : "Login required"}
                 </span>
                 <span>
                   {t("integrated_score")}:{" "}

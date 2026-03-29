@@ -34,6 +34,22 @@ export interface HealthResponse {
   service: string;
 }
 
+export interface AuthUser {
+  id: string;
+  email: string;
+  created_at: string;
+  is_active: boolean;
+}
+
+export interface AuthPayload {
+  email: string;
+  password: string;
+}
+
+export interface AuthResponse {
+  user: AuthUser;
+}
+
 export interface MissionConstraints {
   water: ConstraintLevel;
   energy: ConstraintLevel;

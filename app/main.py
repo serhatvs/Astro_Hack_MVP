@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -14,6 +15,7 @@ from app.api.errors import (
     INVALID_INPUT_MESSAGE,
     normalize_http_error_detail,
 )
+from app.api.auth import router as auth_router
 from app.api.mission import router as mission_router
 from app.api.recommend import router as recommend_router
 from app.routes.demo_cases import router as demo_cases_router
@@ -22,10 +24,19 @@ from app.routes.health import router as health_router
 logger = logging.getLogger(__name__)
 
 
+def _read_allowed_origins() -> list[str]:
+    configured = os.getenv(
+        "CORS_ALLOW_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173",
+    )
+    origins = [origin.strip() for origin in configured.split(",") if origin.strip()]
+    return origins or ["http://localhost:5173", "http://127.0.0.1:5173"]
+
+
 def create_app() -> FastAPI:
     """Create the FastAPI application instance."""
 
-    allowed_origins = ["*"]
+    allowed_origins = _read_allowed_origins()
 
     application = FastAPI(
         title="Adaptive Closed-Loop Space Agriculture AI",
@@ -76,6 +87,10 @@ def create_app() -> FastAPI:
             "endpoints": [
                 "/health",
                 "/demo-cases",
+                "/auth/register",
+                "/auth/login",
+                "/auth/logout",
+                "/auth/me",
                 "/recommend",
                 "/simulation/start",
                 "/simulate",
@@ -85,6 +100,7 @@ def create_app() -> FastAPI:
 
     application.include_router(demo_cases_router)
     application.include_router(health_router)
+    application.include_router(auth_router)
     application.include_router(recommend_router)
     application.include_router(mission_router)
     return application

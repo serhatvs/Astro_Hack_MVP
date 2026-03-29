@@ -16,6 +16,10 @@ def test_root_endpoint_returns_service_overview() -> None:
         "endpoints": [
             "/health",
             "/demo-cases",
+            "/auth/register",
+            "/auth/login",
+            "/auth/logout",
+            "/auth/me",
             "/recommend",
             "/simulation/start",
             "/simulate",
