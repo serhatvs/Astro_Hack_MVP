@@ -13,6 +13,7 @@ from app.models.mission import (
     MissionProfile,
 )
 from app.models.response import (
+    GeminiNarrative,
     LLMAnalysis,
     SimulationRequest,
     SimulationStartRequest,
@@ -158,16 +159,125 @@ def test_recommend_payload_sent_to_gemini_includes_context(monkeypatch) -> None:
         "mission_state",
         "previous_state",
         "history_summary",
+        "baseline_candidate_id",
+        "candidate_shortlist",
         "events",
         "deltas",
     }
     assert payload["request_context"]["source"] == "recommend"
+    assert payload["baseline_candidate_id"] == "candidate_1"
+    assert len(payload["candidate_shortlist"]) >= 1
     assert payload["selected_roles"]["crop"]["role"] == "plant food production"
     assert payload["selected_roles"]["algae"]["role"] == "oxygen and biomass support"
     assert payload["selected_roles"]["microbial"]["role"] == "waste recycling and nutrient conversion"
     assert "system_reasoning" in payload["deterministic_explanations"]
     assert "interaction" in payload["scores"]
     assert "ui_layer" not in payload
+
+
+def test_ai_rerank_can_change_recommendation_selection() -> None:
+    engine = RecommendationEngine(provider=JSONDataProvider())
+
+    class RerankingGeminiClient:
+        def __init__(self) -> None:
+            self.payloads: list[dict] = []
+
+        def analyze(self, payload, **kwargs):  # noqa: ARG002
+            self.payloads.append(payload)
+            shortlist = payload["candidate_shortlist"]
+            chosen = shortlist[1]
+            return GeminiNarrative.from_payload(
+                {
+                    "ui_layer": {
+                        "crop_note": "AI crop note.",
+                        "algae_note": "AI algae note.",
+                        "microbial_note": "AI microbial note.",
+                        "executive_summary": "AI executive summary.",
+                        "adaptation_summary": "",
+                    },
+                    "debug_layer": {
+                        "reasoning_summary": "AI shortlisted review completed. -gemini",
+                        "second_pass": {
+                            "decision": "rerank",
+                            "rationale": "Candidate 2 gives a stronger integrated stack.",
+                            "selected_candidate_id": chosen["candidate_id"],
+                            "selected_configuration": chosen["configuration"],
+                        },
+                    },
+                }
+            )
+
+        def generate_json(self, prompt, **kwargs):  # noqa: ARG002
+            return {
+                "crop_note": "AI crop note.",
+                "algae_note": "AI algae note.",
+                "microbial_note": "AI microbial note.",
+                "executive_summary": "AI executive summary.",
+                "adaptation_summary": "",
+            }
+
+    gemini_client = RerankingGeminiClient()
+    engine.reasoning_loop.gemini_client = gemini_client  # type: ignore[assignment]
+
+    response = engine.recommend(_build_mission())
+    chosen_configuration = gemini_client.payloads[-1]["candidate_shortlist"][1]["configuration"]
+
+    assert response.ai_status.status == "reranked"
+    assert response.ai_status.reviewed is True
+    assert response.ai_status.selection_changed is True
+    assert response.selected_system.crop.name == chosen_configuration["crop"]
+    assert response.selected_system.algae.name == chosen_configuration["algae"]
+    assert response.selected_system.microbial.name == chosen_configuration["microbial"]
+    assert response.recommended_system == chosen_configuration["grow_system"]
+
+
+def test_invalid_ai_rerank_falls_back_to_deterministic_selection() -> None:
+    engine = RecommendationEngine(provider=JSONDataProvider())
+
+    class InvalidRerankGeminiClient:
+        def analyze(self, payload, **kwargs):  # noqa: ARG002
+            return GeminiNarrative.from_payload(
+                {
+                    "ui_layer": {
+                        "crop_note": "AI crop note.",
+                        "algae_note": "AI algae note.",
+                        "microbial_note": "AI microbial note.",
+                        "executive_summary": "AI executive summary.",
+                        "adaptation_summary": "",
+                    },
+                    "debug_layer": {
+                        "reasoning_summary": "AI shortlisted review completed. -gemini",
+                        "second_pass": {
+                            "decision": "rerank",
+                            "rationale": "Trying an invalid id.",
+                            "selected_candidate_id": "candidate_99",
+                            "selected_configuration": {},
+                        },
+                    },
+                }
+            )
+
+        def generate_json(self, prompt, **kwargs):  # noqa: ARG002
+            return {
+                "crop_note": "AI crop note.",
+                "algae_note": "AI algae note.",
+                "microbial_note": "AI microbial note.",
+                "executive_summary": "AI executive summary.",
+                "adaptation_summary": "",
+            }
+
+    baseline_engine = RecommendationEngine(provider=JSONDataProvider())
+    baseline = baseline_engine.recommend(_build_mission(), use_llm=False)
+
+    engine.reasoning_loop.gemini_client = InvalidRerankGeminiClient()  # type: ignore[assignment]
+    response = engine.recommend(_build_mission())
+
+    assert response.ai_status.status == "fallback"
+    assert response.ai_status.reviewed is False
+    assert response.selected_system.crop.name == baseline.selected_system.crop.name
+    assert response.selected_system.algae.name == baseline.selected_system.algae.name
+    assert response.selected_system.microbial.name == baseline.selected_system.microbial.name
+    assert response.recommended_system == baseline.recommended_system
 
 
 def test_simulate_is_deterministic_and_does_not_call_gemini(monkeypatch) -> None:

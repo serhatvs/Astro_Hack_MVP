@@ -47,6 +47,7 @@ from app.models.mission import (
     downgrade_constraint,
 )
 from app.models.response import (
+    AIStatus,
     CropRecommendation,
     DomainScoreBundle,
     DomainScoreVector,
@@ -128,7 +129,7 @@ class RecommendationEngine:
         allow_refinement = source == "recommend" if allow_refinement is None else allow_refinement
         mission_fit_bias = 0.03 if weight_adjustments else 0.0
 
-        integrated_result, ranked_candidates, selected_grow_system = self.integration_engine.select_configuration(
+        selection, shortlist = self.integration_engine.select_configuration(
             mission=mission,
             temporary_penalties=dict(temporary_penalties or {}),
             mission_fit_bias=mission_fit_bias,
@@ -138,19 +139,18 @@ class RecommendationEngine:
         )
         provisional_explanations = self._build_reasoning_context_explanations(
             mission=mission,
-            integrated_result=integrated_result,
-            grow_system_name=selected_grow_system.name,
+            integrated_result=selection.result,
+            grow_system_name=selection.grow_system.name,
         )
         provisional_state_summary = self._build_reasoning_state_summary(
             mission=mission,
-            integrated_result=integrated_result,
+            integrated_result=selection.result,
             existing_state=existing_state,
         )
-        integrated_result, ranked_candidates, selected_grow_system, narrative = self.reasoning_loop.run(
+        selection, narrative, ai_status = self.reasoning_loop.run(
             mission=mission,
-            result=integrated_result,
-            top_crop_rankings=ranked_candidates,
-            grow_system=selected_grow_system,
+            selection=selection,
+            shortlist=shortlist,
             temporary_penalties=dict(temporary_penalties or {}),
             base_biases={
                 "risk_bias": risk_bias,
@@ -168,9 +168,10 @@ class RecommendationEngine:
         )
         return self._compose_recommendation_response(
             mission=mission,
-            integrated_result=integrated_result,
-            ranked_candidates=ranked_candidates,
-            selected_grow_system=selected_grow_system,
+            integrated_result=selection.result,
+            ranked_candidates=selection.ranked_candidates,
+            selected_grow_system=selection.grow_system,
+            ai_status=ai_status,
             llm_analysis=narrative.debug_layer,
             ui_enhanced=narrative.ui_layer,
             temporary_penalties=temporary_penalties,
@@ -185,32 +186,29 @@ class RecommendationEngine:
         """Bootstrap a stateful ecosystem simulation from a user-selected stack."""
 
         try:
-            integrated_result, ranked_candidates, selected_grow_system = (
-                self.integration_engine.evaluate_selected_configuration(
-                    mission=request.mission_profile,
-                    selected_crop_name=request.selected_crop,
-                    selected_algae_name=request.selected_algae,
-                    selected_microbial_name=request.selected_microbial,
-                )
+            selection = self.integration_engine.evaluate_selected_configuration(
+                mission=request.mission_profile,
+                selected_crop_name=request.selected_crop,
+                selected_algae_name=request.selected_algae,
+                selected_microbial_name=request.selected_microbial,
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=INVALID_INPUT_MESSAGE) from exc
 
         provisional_explanations = self._build_reasoning_context_explanations(
             mission=request.mission_profile,
-            integrated_result=integrated_result,
-            grow_system_name=selected_grow_system.name,
+            integrated_result=selection.result,
+            grow_system_name=selection.grow_system.name,
         )
         provisional_state_summary = self._build_reasoning_state_summary(
             mission=request.mission_profile,
-            integrated_result=integrated_result,
+            integrated_result=selection.result,
             existing_state=None,
         )
-        integrated_result, ranked_candidates, selected_grow_system, narrative = self.reasoning_loop.run(
+        selection, narrative, ai_status = self.reasoning_loop.run(
             mission=request.mission_profile,
-            result=integrated_result,
-            top_crop_rankings=ranked_candidates,
-            grow_system=selected_grow_system,
+            selection=selection,
+            shortlist=[selection],
             temporary_penalties={},
             base_biases={
                 "risk_bias": 1.0,
@@ -235,9 +233,10 @@ class RecommendationEngine:
 
         recommendation = self._compose_recommendation_response(
             mission=request.mission_profile,
-            integrated_result=integrated_result,
-            ranked_candidates=ranked_candidates,
-            selected_grow_system=selected_grow_system,
+            integrated_result=selection.result,
+            ranked_candidates=selection.ranked_candidates,
+            selected_grow_system=selection.grow_system,
+            ai_status=ai_status,
             llm_analysis=narrative.debug_layer,
             ui_enhanced=narrative.ui_layer,
             temporary_penalties=None,
@@ -248,8 +247,8 @@ class RecommendationEngine:
             history_event="simulation_start",
             lead_crop_compatibility_override=self._build_selected_crop_compatibility(
                 mission=request.mission_profile,
-                integrated_result=integrated_result,
-                selected_grow_system=selected_grow_system,
+                integrated_result=selection.result,
+                selected_grow_system=selection.grow_system,
             ),
         )
         recommendation = recommendation.model_copy(
@@ -543,6 +542,7 @@ class RecommendationEngine:
         integrated_result,
         ranked_candidates,
         selected_grow_system,
+        ai_status: AIStatus,
         llm_analysis,
         ui_enhanced,
         temporary_penalties: Mapping[str, float] | None,
@@ -656,6 +656,7 @@ class RecommendationEngine:
                 tradeoffs=tradeoff_summary,
                 weak_points=weak_points,
             ),
+            ai_status=ai_status,
             ui_enhanced=ui_enhanced,
             llm_analysis=llm_analysis,
             top_crops=crop_recommendations,

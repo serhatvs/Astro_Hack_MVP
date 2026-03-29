@@ -121,6 +121,36 @@ def test_ai_service_uses_fallback_when_ai_errors() -> None:
     assert result.ui_layer.executive_summary == fallback.ui_layer.executive_summary
 
 
+def test_ai_service_does_not_cache_fallback_results() -> None:
+    class FailingGeminiClient:
+        def __init__(self) -> None:
+            self.analyze_calls = 0
+
+        def analyze(self, payload, **kwargs):  # noqa: ARG002
+            self.analyze_calls += 1
+            raise RuntimeError("upstream failure")
+
+        def generate_json(self, prompt, **kwargs):  # noqa: ARG002
+            raise AssertionError("summary polish should not run when the main call fails")
+
+    fallback = _fallback_narrative()
+    gemini_client = FailingGeminiClient()
+    service = AIService(gemini_client=gemini_client)
+
+    first = service.generate_recommendation_explanation(
+        {"request_context": {"source": "recommend"}},
+        fallback=fallback,
+    )
+    second = service.generate_recommendation_explanation(
+        {"request_context": {"source": "recommend"}},
+        fallback=fallback,
+    )
+
+    assert first.debug_layer.reasoning_summary == fallback.debug_layer.reasoning_summary
+    assert second.debug_layer.reasoning_summary == fallback.debug_layer.reasoning_summary
+    assert gemini_client.analyze_calls == 2
+
+
 def test_ai_service_times_out_and_returns_fallback() -> None:
     class SlowGeminiClient:
         def analyze(self, payload, **kwargs):  # noqa: ARG002

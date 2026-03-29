@@ -1,4 +1,5 @@
 import type {
+  AIStatus,
   MissionStepResponse,
   RankedCandidatesBundle,
   RecommendationResponse,
@@ -50,6 +51,59 @@ export const formatLabel = (value: string) =>
 
 export const isGeminiUsed = (reasoningSummary?: string | null) =>
   Boolean(reasoningSummary?.trim().endsWith(" -gemini"));
+
+export interface RecommendationAiState {
+  active: boolean;
+  label: string;
+  message: string;
+}
+
+export const getRecommendationAiState = (
+  response?:
+    | Pick<RecommendationResponse, "ai_status" | "llm_analysis">
+    | { ai_status?: AIStatus; llm_analysis?: { reasoning_summary?: string | null } }
+    | null,
+): RecommendationAiState => {
+  const status = response?.ai_status?.status;
+
+  if (status === "reranked") {
+    return {
+      active: true,
+      label: "AI reranked",
+      message: response.ai_status?.message || "AI reranked the shortlisted mission stacks.",
+    };
+  }
+
+  if (status === "reviewed") {
+    return {
+      active: true,
+      label: "AI reviewed",
+      message: response.ai_status?.message || "AI reviewed the shortlisted mission stacks.",
+    };
+  }
+
+  if (status === "fallback") {
+    return {
+      active: false,
+      label: "AI fallback",
+      message: response.ai_status?.message || "AI rerank unavailable. Deterministic fallback is active.",
+    };
+  }
+
+  if (isGeminiUsed(response?.llm_analysis?.reasoning_summary)) {
+    return {
+      active: true,
+      label: "AI reviewed",
+      message: "AI reviewed the shortlisted mission stacks.",
+    };
+  }
+
+  return {
+    active: false,
+    label: "AI fallback",
+    message: "AI rerank unavailable. Deterministic fallback is active.",
+  };
+};
 
 export const getExecutiveSummary = (
   response?: RecommendationResponse | SimulationStartResponse | MissionStepResponse | null,

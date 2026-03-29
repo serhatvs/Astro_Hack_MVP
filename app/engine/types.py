@@ -52,3 +52,12 @@ class IntegratedResult:
     interaction: InteractionEvaluation
     grow_system_name: str
     integrated_score: float
+
+
+@dataclass(slots=True)
+class IntegratedSelection:
+    """Integrated candidate plus the ranking context needed by the API."""
+
+    result: IntegratedResult
+    ranked_candidates: DomainRankingSet
+    grow_system: Any

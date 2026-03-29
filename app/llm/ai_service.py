@@ -71,7 +71,6 @@ class AIService:
         )
         if not narrative.debug_layer.reasoning_summary.endswith(" -gemini"):
             logger.info("AIService falling back to deterministic recommendation narrative.")
-            self._set_recommendation_cache(cache_key, narrative)
             return narrative
 
         polished_ui = self.generate_summary_polish(
@@ -133,7 +132,8 @@ class AIService:
             timeout_seconds=self.timeout_seconds,
             logger=logger,
         )
-        self._set_summary_cache(cache_key, polished_ui)
+        if polished_ui.model_dump(mode="json") != fallback_ui.model_dump(mode="json"):
+            self._set_summary_cache(cache_key, polished_ui)
         return polished_ui
 
     def _generate_summary_ui(

@@ -11,6 +11,7 @@ export type CrisisType = "water" | "energy" | "yield";
 export type RiskLevel = "low" | "moderate" | "high";
 export type MissionStatus = "NOMINAL" | "WATCH" | "CRITICAL";
 export type ApiStatus = "idle" | "loading" | "ready" | "warning" | "error";
+export type AIStatusMode = "reranked" | "reviewed" | "fallback" | "disabled";
 
 export interface DemoSelection {
   selected_crop: string;
@@ -235,6 +236,14 @@ export interface ExplanationBundle {
   weak_points: string;
 }
 
+export interface AIStatus {
+  status: AIStatusMode;
+  provider: string;
+  reviewed: boolean;
+  selection_changed: boolean;
+  message: string;
+}
+
 export interface LLMAnalysis {
   reasoning_summary: string;
   weaknesses: string[];
@@ -261,6 +270,7 @@ export interface RecommendationResponse {
   ranked_candidates?: RankedCandidatesBundle;
   scores?: ScoreBundle;
   explanations?: ExplanationBundle;
+  ai_status?: AIStatus;
   ui_enhanced?: UIEnhancedNarrative;
   llm_analysis?: LLMAnalysis;
   top_crops: CropRecommendation[];

@@ -9,9 +9,8 @@ import LiveTelemetry from "@/components/dashboard/LiveTelemetry";
 import LanguageToggle from "@/components/LanguageToggle";
 import SimulationLauncher from "@/components/dashboard/SimulationLauncher";
 import { fetchDemoCases, isApiError, recommendMission, startSimulation } from "@/lib/api";
-import { useAuth } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
-import { buildLayerSummaries, formatLabel, getExecutiveSummary, isGeminiUsed } from "@/lib/mission-view";
+import { buildLayerSummaries, formatLabel, getExecutiveSummary, getRecommendationAiState } from "@/lib/mission-view";
 import {
   clearSimulationSession,
   isSimulationSessionTerminal,
@@ -93,7 +92,6 @@ const resolveUserFacingMessage = (error: unknown, fallback: string) => {
 
 const Index = () => {
   const { t } = useI18n();
-  const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const [environment, setEnvironment] = useState<Environment>("mars");
   const [duration, setDuration] = useState<Duration>("long");
@@ -140,7 +138,7 @@ const Index = () => {
   });
 
   const currentRecommendation = recommendation;
-  const geminiUsed = isGeminiUsed(currentRecommendation?.llm_analysis?.reasoning_summary);
+  const aiState = getRecommendationAiState(currentRecommendation);
   const layerSummaries = buildLayerSummaries(currentRecommendation, t);
   const executiveSummary = getExecutiveSummary(currentRecommendation);
   const hasRecommendation = Boolean(currentRecommendation);
@@ -323,24 +321,22 @@ const Index = () => {
                     {activeDemoCase.expected_outcome}
                   </p>
                 )}
-                {!isAuthenticated && (
-                  <p className="max-w-4xl text-xs text-muted-foreground">
-                    Please log in to continue with AI-enhanced mission explanations. Deterministic planning remains available.
-                  </p>
-                )}
+                <p className="max-w-4xl text-xs text-muted-foreground">
+                  {aiState.message}
+                </p>
               </div>
               <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono text-muted-foreground">
                 <span
                   className={`rounded border px-1.5 py-0.5 uppercase tracking-wider ${
-                    geminiUsed
+                    aiState.active
                       ? "border-neon-cyan/40 bg-neon-cyan/10 text-neon-cyan"
                       : "border-glass-border bg-muted/20 text-muted-foreground"
                   }`}
                 >
                   {t("ai_insight")}
                 </span>
-                <span className={geminiUsed ? "text-neon-cyan" : "text-muted-foreground"}>
-                  {geminiUsed ? t("enabled") : isAuthenticated ? t("fallback") : "Login required"}
+                <span className={aiState.active ? "text-neon-cyan" : "text-muted-foreground"}>
+                  {aiState.label}
                 </span>
                 <span>
                   {t("integrated_score")}:{" "}

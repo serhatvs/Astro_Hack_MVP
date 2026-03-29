@@ -1,18 +1,21 @@
 [
   {
     "name": "Triticum aestivum (Cuce Bugday)",
-    "calorie_yield": 95,
-    "water_need": 85,
-    "energy_need": 100,
-    "growth_time": 90,
-    "risk": 80,
-    "maintenance": 75,
-    "area_need": 100,
+    "calorie_yield": 92,
+    "water_need": 82,
+    "energy_need": 95,
+    "growth_time": 82,
+    "risk": 68,
+    "maintenance": 68,
+    "area_need": 95,
     "nutrient_density": 85,
     "oxygen_contribution": 90,
     "co2_utilization": 95,
     "waste_recycling_synergy": 90,
     "crew_acceptance": 95,
+    "mission_environments": [
+      "mars"
+    ],
     "compatible_systems": [
       "Solid Media BPC",
       "Yuksek PAR Isikli Tuneller"
@@ -21,22 +24,26 @@
       "Genis Alanli CEA",
       "Yuksek CO2 Ortamlari"
     ],
-    "notes": "Kalori ve O2 katkisi muazzamdir ancak inanilmaz derecede alan, su ve enerji tuketir. Yuksek rekolte saglasa da, sistemin aydinlatma ve guc kapasitesini cokertme riski en yuksek olan turdur."
+    "notes": "Kalori ve O2 katkisi cok yuksektir ancak hala alan, su ve enerji tuketimi belirgin seviyededir. Uzun sureli kalori odakli gorevlerde anlamlidir, fakat bakim ve risk maliyeti nedeniyle her profilde varsayilan secim olmamalidir."
   },
   {
     "name": "Lactuca sativa (Marul)",
     "calorie_yield": 10,
-    "water_need": 30,
-    "energy_need": 25,
-    "growth_time": 15,
-    "risk": 15,
-    "maintenance": 20,
-    "area_need": 25,
-    "nutrient_density": 35,
-    "oxygen_contribution": 20,
-    "co2_utilization": 25,
-    "waste_recycling_synergy": 50,
-    "crew_acceptance": 100,
+    "water_need": 42,
+    "energy_need": 34,
+    "growth_time": 24,
+    "risk": 28,
+    "maintenance": 34,
+    "area_need": 34,
+    "nutrient_density": 28,
+    "oxygen_contribution": 16,
+    "co2_utilization": 20,
+    "waste_recycling_synergy": 36,
+    "crew_acceptance": 90,
+    "mission_environments": [
+      "iss",
+      "moon"
+    ],
     "compatible_systems": [
       "NFT Hidroponik",
       "Dikey Cok Katli Moduller"
@@ -45,22 +52,26 @@
       "Dusuk Isikli Kabinler",
       "Dar Alanlar"
     ],
-    "notes": "Neredeyse sifir risk, su ve enerji gereksinimi ile mukemmel bir hayatta kalma bitkisidir. Cok hizli buyur ancak kalori degeri o kadar dusuktur ki, murettebati tek basina hayatta tutmasi imkansizdir; sadece moral kaynagidir."
+    "notes": "Hala hizli ve gorece dusuk maliyetli bir hayatta kalma bitkisidir ancak artik tum metriklerde kusursuz degildir. Kalori ve dongu katkisi dusuk kaldigi icin ozellikle ISS ve dusuk bakim profillerinde degerlidir, ama her uzun gorevin varsayilan kazananı olmamalidir."
   },
   {
     "name": "Solanum lycopersicum (Dwarf Domates)",
-    "calorie_yield": 55,
-    "water_need": 65,
-    "energy_need": 60,
-    "growth_time": 70,
-    "risk": 60,
-    "maintenance": 75,
-    "area_need": 60,
-    "nutrient_density": 90,
-    "oxygen_contribution": 55,
+    "calorie_yield": 68,
+    "water_need": 58,
+    "energy_need": 55,
+    "growth_time": 58,
+    "risk": 38,
+    "maintenance": 54,
+    "area_need": 52,
+    "nutrient_density": 94,
+    "oxygen_contribution": 60,
     "co2_utilization": 60,
-    "waste_recycling_synergy": 70,
-    "crew_acceptance": 95,
+    "waste_recycling_synergy": 78,
+    "crew_acceptance": 96,
+    "mission_environments": [
+      "mars",
+      "moon"
+    ],
     "compatible_systems": [
       "Advanced Plant Habitat (APH)",
       "Mikorizal Asilanmis Substratlar"
@@ -69,22 +80,25 @@
       "Orta Isikli CEA",
       "Duzenli Sicaklik Kontrollu Moduller"
     ],
-    "notes": "Tam bir orta-siklet denge bitkisidir. Buyume suresi uzundur ve tozlasma, budama gibi ciddi is gucu (bakim) ister; bunun karsiliginda murettebata mukemmel antioksidan ve ortalama kalori saglar."
+    "notes": "Denge odakli gorevler icin orta-siklet yerine artik daha gercekci bir ana adaydir. Hala bakim ister fakat kalori, besin ve dongu katkisi ile uzun sureli Mars ve Moon senaryolarinda marulun onune gecebilir."
   },
   {
     "name": "Cucumis sativus (Salatalik)",
-    "calorie_yield": 30,
-    "water_need": 100,
+    "calorie_yield": 38,
+    "water_need": 88,
     "energy_need": 70,
     "growth_time": 50,
-    "risk": 85,
-    "maintenance": 65,
-    "area_need": 80,
+    "risk": 62,
+    "maintenance": 54,
+    "area_need": 72,
     "nutrient_density": 40,
-    "oxygen_contribution": 75,
-    "co2_utilization": 80,
+    "oxygen_contribution": 82,
+    "co2_utilization": 86,
     "waste_recycling_synergy": 30,
     "crew_acceptance": 85,
+    "mission_environments": [
+      "moon"
+    ],
     "compatible_systems": [
       "WRADS Baglantili Dikey Tarim",
       "Aga Bagli Sistemler"
@@ -93,22 +107,25 @@
       "Yuksek Nemli Atmosfer",
       "Bol Su Akisli Ortamlar"
     ],
-    "notes": "Biyokutlesi yuksektir ancak su sistemini tam anlamiyla somuren bir kara delik gibidir. Su dongusunde (WRADS) yasanacak ufak bir ariza, tum mahsulun 24 saatte tamamen yok olmasina yol acar."
+    "notes": "Biyokutlesi ve atmosfer katkisi yuksektir ancak su talebi hala belirgindir. Bu nedenle yalnizca belirli Moon benzeri profillerde sansi olan, ama genis kullanimli olmayan bir uzmandir."
   },
   {
     "name": "Glycine max (Soya Fasulyesi)",
     "calorie_yield": 100,
     "water_need": 95,
     "energy_need": 90,
-    "growth_time": 85,
-    "risk": 90,
-    "maintenance": 85,
+    "growth_time": 78,
+    "risk": 78,
+    "maintenance": 74,
     "area_need": 95,
     "nutrient_density": 100,
     "oxygen_contribution": 85,
     "co2_utilization": 90,
     "waste_recycling_synergy": 95,
     "crew_acceptance": 80,
+    "mission_environments": [
+      "mars"
+    ],
     "compatible_systems": [
       "Rhizobium Asili Biyoreaktorler",
       "Derin Kok Substratlari"
@@ -116,6 +133,6 @@
     "preferred_environments": [
       "Yuksek Isikli Genis Alanlar"
     ],
-    "notes": "Sistemin bitkisel protein ve kalori sampiyonudur ancak hem suyu hem alani inanilmaz tuketir. Hasat islemleri mesakkatlidir, kok nodullerinde mikrobiyal simbiyoz kusursuz kurulamazsa tum yatirim cope gider."
+    "notes": "Bitkisel protein ve kalori sampiyonudur ancak su ve alan maliyeti hala cok yuksektir. Bu iyilestirilmis profil onu nadir ama anlamli bir Mars yuksek-kalori alternatifi yapar; genel amacli secim haline getirmez."
   }
 ]

@@ -35,7 +35,8 @@ def test_scoring_produces_valid_normalized_ranking() -> None:
     assert ranked_crops == sorted(ranked_crops, key=lambda item: item.score, reverse=True)
 
     ranked_names = [item.crop.name for item in ranked_crops]
-    assert ranked_names[0] == "Lactuca sativa (Marul)"
+    assert ranked_names[0] == "Solanum lycopersicum (Dwarf Domates)"
+    assert ranked_names.index("Solanum lycopersicum (Dwarf Domates)") < ranked_names.index("Lactuca sativa (Marul)")
     assert ranked_names.index("Lactuca sativa (Marul)") < ranked_names.index("Triticum aestivum (Cuce Bugday)")
     assert ranked_names.index("Lactuca sativa (Marul)") < ranked_names.index("Glycine max (Soya Fasulyesi)")
 
@@ -82,7 +83,8 @@ def test_environment_influence_changes_recommendation_behavior() -> None:
     assert mars.recommended_system == "hybrid"
     assert moon.recommended_system == "aeroponic"
     assert iss.recommended_system == "hydroponic"
-    assert mars.top_crops[0].name == "Lactuca sativa (Marul)"
+    assert mars.top_crops[0].name == "Solanum lycopersicum (Dwarf Domates)"
+    assert moon.top_crops[0].name == "Solanum lycopersicum (Dwarf Domates)"
     assert iss.top_crops[0].name == "Lactuca sativa (Marul)"
     assert mars.executive_summary.startswith("Mars mission status")
     assert moon.why_this_system.startswith("Aeroponic is the best fit")

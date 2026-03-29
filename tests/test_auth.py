@@ -106,7 +106,7 @@ def test_logout_clears_session() -> None:
         assert me_response.json()["detail"] == LOGIN_REQUIRED_MESSAGE
 
 
-def test_recommend_enables_ai_only_for_authenticated_sessions(monkeypatch) -> None:
+def test_recommend_always_attempts_ai_review(monkeypatch) -> None:
     engine = get_default_engine()
     original_recommend = engine.recommend
     captured_use_llm: list[bool] = []
@@ -120,7 +120,7 @@ def test_recommend_enables_ai_only_for_authenticated_sessions(monkeypatch) -> No
     with TestClient(app) as client:
         logged_out = client.post("/recommend", json=_mission_payload())
         assert logged_out.status_code == 200
-        assert captured_use_llm[-1] is False
+        assert captured_use_llm[-1] is True
 
         register_response = client.post("/auth/register", json=_credentials())
         assert register_response.status_code == 201

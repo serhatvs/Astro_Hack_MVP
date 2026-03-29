@@ -9,9 +9,16 @@ from typing import Any
 from app.core.mission_state import MissionState
 from app.core.simulation import MissionEvents
 from app.engine.integration_engine import IntegrationEngine
-from app.engine.types import IntegratedResult
+from app.engine.types import IntegratedSelection, IntegratedResult
 from app.models.mission import Environment, MissionProfile
-from app.models.response import GeminiNarrative, LLMAnalysis, RecommendationResponse, UIEnhancedNarrative
+from app.models.response import (
+    AIStatus,
+    AIStatusMode,
+    GeminiNarrative,
+    LLMAnalysis,
+    RecommendationResponse,
+    UIEnhancedNarrative,
+)
 from app.models.system import GrowingSystem
 from app.services.data_provider import DataProvider
 
@@ -42,9 +49,8 @@ class ReasoningLoop:
     def run(
         self,
         mission: MissionProfile,
-        result: IntegratedResult,
-        top_crop_rankings: list[Any],
-        grow_system: GrowingSystem,
+        selection: IntegratedSelection,
+        shortlist: list[IntegratedSelection],
         temporary_penalties: dict[str, float] | None = None,
         base_biases: dict[str, float] | None = None,
         *,
@@ -56,12 +62,12 @@ class ReasoningLoop:
         deltas: Mapping[str, Any] | None = None,
         allow_refinement: bool = True,
         use_llm: bool = True,
-    ) -> tuple[IntegratedResult, list[Any], GrowingSystem, GeminiNarrative]:
+    ) -> tuple[IntegratedSelection, GeminiNarrative, AIStatus]:
         narrative = self._analyze_result(
             source=source,
             mission=mission,
-            result=result,
-            grow_system=grow_system,
+            selection=selection,
+            shortlist=shortlist,
             deterministic_explanations=deterministic_explanations,
             mission_state=mission_state,
             previous_state=previous_state,
@@ -71,66 +77,41 @@ class ReasoningLoop:
             use_llm=use_llm,
         )
 
+        if source != "recommend":
+            narrative = self._ensure_second_pass(
+                narrative,
+                source=source,
+                selected_configuration=self._selected_configuration(
+                    selection.result,
+                    selection.grow_system.name,
+                ),
+                decision="retain",
+                reason="Deterministic-only flow kept the current configuration.",
+            )
+            return selection, narrative, self._disabled_ai_status(source)
+
         if not allow_refinement or self.max_iterations < 2:
             narrative = self._ensure_second_pass(
                 narrative,
                 source=source,
-                selected_configuration=self._selected_configuration(result, grow_system.name),
+                selected_configuration=self._selected_configuration(
+                    selection.result,
+                    selection.grow_system.name,
+                ),
                 decision="retain",
-                reason="Critique-only mode kept the deterministic configuration without rerunning selection.",
+                reason="AI shortlist review was skipped because refinement mode is disabled.",
             )
-            return result, top_crop_rankings, grow_system, narrative
-
-        refinement = self._derive_refinement(narrative.debug_layer, mission, result)
-        if refinement is None:
-            narrative = self._ensure_second_pass(
-                narrative,
-                source=source,
-                selected_configuration=self._selected_configuration(result, grow_system.name),
-                decision="retain",
-                reason="The deterministic configuration remained acceptable after critique.",
+            return selection, narrative, self._fallback_ai_status(
+                "AI shortlist review was skipped. Deterministic selection remains active."
             )
-            return result, top_crop_rankings, grow_system, narrative
 
-        rerun_result, rerun_crops, rerun_grow_system = self.integration_engine.select_configuration(
-            mission=mission,
-            temporary_penalties=temporary_penalties,
-            risk_bias=(base_biases or {}).get("risk_bias", 1.0) * refinement["risk_bias"],
-            complexity_bias=(base_biases or {}).get("complexity_bias", 1.0) * refinement["complexity_bias"],
-            loop_bias=(base_biases or {}).get("loop_bias", 1.0) * refinement["loop_bias"],
+        updated_selection, narrative, ai_status = self._apply_ai_review(
+            baseline_selection=selection,
+            shortlist=shortlist,
+            narrative=narrative,
+            source=source,
         )
-
-        if rerun_result.integrated_score > result.integrated_score + 0.02:
-            updated_debug = narrative.debug_layer.model_copy(
-                update={
-                    "second_pass": {
-                        "decision": "refine",
-                        "rationale": "A second deterministic pass improved the integrated score after critique.",
-                        "applied_adjustments": refinement,
-                        "selected_configuration": self._selected_configuration(
-                            rerun_result,
-                            rerun_grow_system.name,
-                        ),
-                    }
-                }
-            )
-            updated_debug.second_pass_decision = dict(updated_debug.second_pass)
-            narrative = narrative.model_copy(update={"debug_layer": updated_debug})
-            return rerun_result, rerun_crops, rerun_grow_system, narrative
-
-        updated_debug = narrative.debug_layer.model_copy(
-            update={
-                "second_pass": {
-                    "decision": "retain",
-                    "rationale": "The second deterministic pass did not outperform the baseline configuration.",
-                    "applied_adjustments": refinement,
-                    "selected_configuration": self._selected_configuration(result, grow_system.name),
-                }
-            }
-        )
-        updated_debug.second_pass_decision = dict(updated_debug.second_pass)
-        narrative = narrative.model_copy(update={"debug_layer": updated_debug})
-        return result, top_crop_rankings, grow_system, narrative
+        return updated_selection, narrative, ai_status
 
     def analyze_response(
         self,
@@ -151,6 +132,7 @@ class ReasoningLoop:
             deterministic_explanations=self._deterministic_explanations_from_response(response),
             mission_state=response.mission_state,
             previous_state=previous_state or (previous_recommendation.mission_state if previous_recommendation else None),
+            shortlist=None,
             events=events,
             deltas=deltas,
             use_llm=use_llm,
@@ -173,8 +155,8 @@ class ReasoningLoop:
         *,
         source: str,
         mission: MissionProfile,
-        result: IntegratedResult,
-        grow_system: GrowingSystem,
+        selection: IntegratedSelection,
+        shortlist: list[IntegratedSelection],
         deterministic_explanations: Mapping[str, Any] | None,
         mission_state: MissionState | Mapping[str, Any] | None,
         previous_state: MissionState | Mapping[str, Any] | None,
@@ -186,11 +168,12 @@ class ReasoningLoop:
         return self._analyze_payload(
             source=source,
             mission=mission,
-            selected_roles=self._selected_roles_from_result(result, grow_system),
-            scores=self._scores_from_result(result),
+            selected_roles=self._selected_roles_from_result(selection.result, selection.grow_system),
+            scores=self._scores_from_result(selection.result),
             deterministic_explanations=deterministic_explanations,
             mission_state=mission_state,
             previous_state=previous_state,
+            shortlist=shortlist,
             events=events,
             deltas={
                 **(dict(deltas or {})),
@@ -209,6 +192,7 @@ class ReasoningLoop:
         deterministic_explanations: Mapping[str, Any] | None,
         mission_state: MissionState | Mapping[str, Any] | None,
         previous_state: MissionState | Mapping[str, Any] | None,
+        shortlist: list[IntegratedSelection] | None,
         events: MissionEvents | Mapping[str, Any] | None,
         deltas: Mapping[str, Any] | None,
         use_llm: bool,
@@ -221,6 +205,7 @@ class ReasoningLoop:
             deterministic_explanations=deterministic_explanations,
             mission_state=mission_state,
             previous_state=previous_state,
+            shortlist=shortlist,
             events=events,
             deltas=deltas,
         )
@@ -232,6 +217,7 @@ class ReasoningLoop:
             deterministic_explanations=deterministic_explanations,
             mission_state=mission_state,
             previous_state=previous_state,
+            shortlist=shortlist,
             events=events,
             deltas=deltas,
         )
@@ -272,16 +258,18 @@ class ReasoningLoop:
         deterministic_explanations: Mapping[str, Any] | None,
         mission_state: MissionState | Mapping[str, Any] | None,
         previous_state: MissionState | Mapping[str, Any] | None,
+        shortlist: list[IntegratedSelection] | None,
         events: MissionEvents | Mapping[str, Any] | None,
         deltas: Mapping[str, Any] | None,
     ) -> dict[str, Any]:
         current_state_summary = self._summarize_state(mission_state)
         previous_state_summary = self._summarize_state(previous_state)
+        shortlist_payload = self._build_shortlist_payload(shortlist or [])
         return {
             "request_context": {
                 "source": source,
-                "deterministic_authoritative": True,
-                "gemini_optional": True,
+                "deterministic_shortlist_authoritative": True,
+                "ai_rerank_requested": source == "recommend",
                 "has_current_state": current_state_summary is not None,
                 "has_previous_state": previous_state_summary is not None,
                 "has_events": events is not None,
@@ -294,6 +282,8 @@ class ReasoningLoop:
             "mission_state": current_state_summary,
             "previous_state": previous_state_summary,
             "history_summary": self._history_summary(mission_state),
+            "baseline_candidate_id": shortlist_payload[0]["candidate_id"] if shortlist_payload else None,
+            "candidate_shortlist": shortlist_payload,
             "events": self._serialize_optional(events),
             "deltas": dict(deltas or {}),
         }
@@ -308,6 +298,7 @@ class ReasoningLoop:
         deterministic_explanations: Mapping[str, Any] | None,
         mission_state: MissionState | Mapping[str, Any] | None,
         previous_state: MissionState | Mapping[str, Any] | None,
+        shortlist: list[IntegratedSelection] | None,
         events: MissionEvents | Mapping[str, Any] | None,
         deltas: Mapping[str, Any] | None,
     ) -> GeminiNarrative:
@@ -399,7 +390,8 @@ class ReasoningLoop:
                 "alternative": alternative,
                 "second_pass": {
                     "decision": "retain",
-                    "rationale": "Deterministic fallback analysis did not trigger an additional rerun.",
+                    "rationale": "AI shortlist review was unavailable, so the deterministic baseline remained active.",
+                    "selected_candidate_id": "candidate_1" if source == "recommend" else "",
                     "selected_configuration": {
                         "crop": crop_name,
                         "algae": algae_name,
@@ -574,36 +566,151 @@ class ReasoningLoop:
                 parts.append(f"Nutrient-cycle efficiency is {direction} over time.")
         return " ".join(parts)
 
-    def _derive_refinement(
+    def _apply_ai_review(
         self,
-        llm_analysis: LLMAnalysis,
-        mission: MissionProfile,
-        result: IntegratedResult,
-    ) -> dict[str, float] | None:
-        text = " ".join([llm_analysis.reasoning_summary, *llm_analysis.weaknesses, *llm_analysis.improvements]).lower()
-        risk_bias = 1.0
-        complexity_bias = 1.0
-        loop_bias = 1.0
-        changed = False
+        *,
+        baseline_selection: IntegratedSelection,
+        shortlist: list[IntegratedSelection],
+        narrative: GeminiNarrative,
+        source: str,
+    ) -> tuple[IntegratedSelection, GeminiNarrative, AIStatus]:
+        baseline_configuration = self._selected_configuration(
+            baseline_selection.result,
+            baseline_selection.grow_system.name,
+        )
+        baseline_candidate_id = self._selection_id(0)
 
-        if "contamination" in text or result.microbial.risk_score >= 0.55:
-            risk_bias = 1.15
-            changed = True
-        if "complex" in text or "maintenance" in text or result.interaction.complexity_penalty >= 0.58:
-            complexity_bias = 1.15 if mission.environment is Environment.ISS else 1.10
-            changed = True
-        if "loop closure" in text or result.interaction.loop_closure_bonus <= 0.62:
-            loop_bias = 1.12
-            changed = True
+        if source != "recommend":
+            return baseline_selection, narrative, self._disabled_ai_status(source)
 
-        if not changed:
-            return None
+        if not narrative.debug_layer.reasoning_summary.endswith(" -gemini"):
+            fallback_narrative = self._ensure_second_pass(
+                narrative,
+                source=source,
+                selected_configuration=baseline_configuration,
+                decision="retain",
+                reason="AI shortlist review was unavailable, so the deterministic baseline remained active.",
+            )
+            return baseline_selection, fallback_narrative, self._fallback_ai_status(
+                "AI rerank unavailable. Deterministic shortlist result is being shown."
+            )
 
-        return {
-            "risk_bias": risk_bias,
-            "complexity_bias": complexity_bias,
-            "loop_bias": loop_bias,
+        shortlist_lookup = {
+            self._selection_id(index): selection
+            for index, selection in enumerate(shortlist)
         }
+        second_pass = narrative.debug_layer.second_pass or narrative.debug_layer.second_pass_decision
+        selected_candidate_id = str(second_pass.get("selected_candidate_id", "")).strip()
+
+        if selected_candidate_id not in shortlist_lookup:
+            updated_debug = narrative.debug_layer.model_copy(
+                update={
+                    "second_pass": {
+                        "decision": "retain",
+                        "rationale": "AI response omitted a valid shortlist candidate id, so the deterministic baseline remained active.",
+                        "selected_candidate_id": baseline_candidate_id,
+                        "selected_configuration": baseline_configuration,
+                    }
+                }
+            )
+            updated_debug.second_pass_decision = dict(updated_debug.second_pass)
+            fallback_narrative = narrative.model_copy(update={"debug_layer": updated_debug})
+            return baseline_selection, fallback_narrative, self._fallback_ai_status(
+                "AI rerank response was invalid. Deterministic shortlist result is being shown."
+            )
+
+        chosen_selection = shortlist_lookup[selected_candidate_id]
+        selection_changed = self._selection_changed(baseline_selection, chosen_selection)
+        updated_debug = narrative.debug_layer.model_copy(
+            update={
+                "second_pass": {
+                    **dict(second_pass),
+                    "decision": "rerank" if selection_changed else "retain",
+                    "selected_candidate_id": selected_candidate_id,
+                    "selected_configuration": self._selected_configuration(
+                        chosen_selection.result,
+                        chosen_selection.grow_system.name,
+                    ),
+                }
+            }
+        )
+        updated_debug.second_pass_decision = dict(updated_debug.second_pass)
+        updated_narrative = narrative.model_copy(update={"debug_layer": updated_debug})
+        return (
+            chosen_selection,
+            updated_narrative,
+            self._successful_ai_status(selection_changed),
+        )
+
+    def _disabled_ai_status(self, source: str) -> AIStatus:
+        return AIStatus(
+            status=AIStatusMode.DISABLED,
+            provider="deterministic",
+            reviewed=False,
+            selection_changed=False,
+            message=f"{source.replace('_', ' ').title()} uses deterministic analysis only.",
+        )
+
+    def _fallback_ai_status(self, message: str) -> AIStatus:
+        return AIStatus(
+            status=AIStatusMode.FALLBACK,
+            provider="deterministic",
+            reviewed=False,
+            selection_changed=False,
+            message=message,
+        )
+
+    def _successful_ai_status(self, selection_changed: bool) -> AIStatus:
+        return AIStatus(
+            status=AIStatusMode.RERANKED if selection_changed else AIStatusMode.REVIEWED,
+            provider="gemini",
+            reviewed=True,
+            selection_changed=selection_changed,
+            message=(
+                "AI reranked the shortlisted mission stacks before finalizing the recommendation."
+                if selection_changed
+                else "AI reviewed the shortlisted mission stacks and kept the leading deterministic option."
+            ),
+        )
+
+    def _selection_changed(
+        self,
+        baseline_selection: IntegratedSelection,
+        chosen_selection: IntegratedSelection,
+    ) -> bool:
+        return self._selected_configuration(
+            baseline_selection.result,
+            baseline_selection.grow_system.name,
+        ) != self._selected_configuration(
+            chosen_selection.result,
+            chosen_selection.grow_system.name,
+        )
+
+    def _selection_id(self, index: int) -> str:
+        return f"candidate_{index + 1}"
+
+    def _build_shortlist_payload(
+        self,
+        shortlist: list[IntegratedSelection],
+    ) -> list[dict[str, Any]]:
+        payload: list[dict[str, Any]] = []
+        for index, selection in enumerate(shortlist[:4]):
+            payload.append(
+                {
+                    "candidate_id": self._selection_id(index),
+                    "rank": index + 1,
+                    "configuration": self._selected_configuration(
+                        selection.result,
+                        selection.grow_system.name,
+                    ),
+                    "selected_roles": self._selected_roles_from_result(
+                        selection.result,
+                        selection.grow_system,
+                    ),
+                    "scores": self._scores_from_result(selection.result),
+                }
+            )
+        return payload
 
     def _selected_roles_from_result(
         self,

@@ -255,7 +255,7 @@ def test_initial_risk_is_fairly_calibrated_by_constraints_and_duration(monkeypat
                 },
                     "goal": "balanced",
                 },
-            "selected_crop": "Solanum lycopersicum (Dwarf Domates)",
+            "selected_crop": "Triticum aestivum (Cuce Bugday)",
             "selected_algae": "Dunaliella salina",
             "selected_microbial": "Methylobacterium extorquens",
         },
@@ -728,7 +728,7 @@ def test_mission_step_metrics_respond_to_stress_without_becoming_risk_copies(mon
                 },
                 "goal": "balanced",
             },
-            "selected_crop": "Lactuca sativa (Marul)",
+            "selected_crop": "Solanum lycopersicum (Dwarf Domates)",
             "selected_algae": "Chlorella vulgaris",
             "selected_microbial": "Saccharomyces boulardii",
         },
@@ -897,3 +897,50 @@ def test_mission_step_risk_accumulates_across_weeks(monkeypatch) -> None:
     assert recovered_data["mission_state"]["system_metrics"]["risk_level"] >= 0
     assert recovered_data["mission_state"]["system_metrics"]["risk_level"] <= 100
     assert recovered_data["mission_state"]["system_metrics"]["risk_level"] != initial_risk
+
+
+def test_recommendation_data_balance_varies_top_crop_by_mission_profile(monkeypatch) -> None:
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+    missions = {
+        "mars_balanced": {
+            "environment": "mars",
+            "duration": "long",
+            "constraints": {
+                "water": "medium",
+                "energy": "medium",
+                "area": "medium",
+            },
+            "goal": "balanced",
+        },
+        "iss_low_maintenance": {
+            "environment": "iss",
+            "duration": "short",
+            "constraints": {
+                "water": "low",
+                "energy": "low",
+                "area": "low",
+            },
+            "goal": "low_maintenance",
+        },
+        "mars_calorie": {
+            "environment": "mars",
+            "duration": "medium",
+            "constraints": {
+                "water": "low",
+                "energy": "medium",
+                "area": "medium",
+            },
+            "goal": "calorie_max",
+        },
+    }
+
+    outputs = {
+        label: client.post("/recommend", json=payload).json()["top_crops"][0]["name"]
+        for label, payload in missions.items()
+    }
+
+    assert outputs["mars_balanced"] == "Solanum lycopersicum (Dwarf Domates)"
+    assert outputs["iss_low_maintenance"] == "Lactuca sativa (Marul)"
+    assert outputs["mars_calorie"] == "Triticum aestivum (Cuce Bugday)"
+    assert len(set(outputs.values())) == 3

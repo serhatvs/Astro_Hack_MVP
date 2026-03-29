@@ -10,7 +10,7 @@ vi.mock("@/lib/auth", () => ({
 }));
 
 describe("AuthPanel", () => {
-  it("renders the logged-out gate for AI-enhanced access", () => {
+  it("renders the logged-out account access copy", () => {
     mockUseAuth.mockReturnValue({
       user: null,
       isAuthenticated: false,
@@ -27,7 +27,7 @@ describe("AuthPanel", () => {
 
     expect(screen.getByText("Account Access")).toBeInTheDocument();
     expect(
-      screen.getByText("Log in to unlock AI-enhanced recommendation text. Logged-out users still get deterministic analysis."),
+      screen.getByText("Use an account for protected features and future quotas. Mission planning will still attempt AI reranking when available."),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Login" })).toBeInTheDocument();
   });
@@ -52,7 +52,7 @@ describe("AuthPanel", () => {
 
     render(<AuthPanel />);
 
-    expect(screen.getByText("AI Access Enabled")).toBeInTheDocument();
+    expect(screen.getByText("Session Active")).toBeInTheDocument();
     expect(screen.getByText("demo.user@example.com")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /logout/i })).toBeInTheDocument();
   });

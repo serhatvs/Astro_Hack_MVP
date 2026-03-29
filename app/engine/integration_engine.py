@@ -9,7 +9,7 @@ from app.engine.algae_engine import AlgaeEngine
 from app.engine.crop_engine import CropEngine
 from app.engine.interaction_engine import InteractionEngine
 from app.engine.microbial_engine import MicrobialEngine
-from app.engine.types import DomainEvaluation, DomainRankingSet, IntegratedResult
+from app.engine.types import DomainEvaluation, DomainRankingSet, IntegratedResult, IntegratedSelection
 from app.models.mission import Environment, MissionProfile
 from app.models.system import GrowingSystem
 from app.services.data_provider import DataProvider
@@ -40,7 +40,7 @@ class IntegrationEngine:
         risk_bias: float = 1.0,
         complexity_bias: float = 1.0,
         loop_bias: float = 1.0,
-    ) -> tuple[IntegratedResult, DomainRankingSet, GrowingSystem]:
+    ) -> tuple[IntegratedSelection, list[IntegratedSelection]]:
         crops = self.provider.get_crops()
         algae_systems = self.provider.get_algae_systems()
         microbial_systems = self.provider.get_microbial_systems()
@@ -83,16 +83,18 @@ class IntegrationEngine:
                     )
                 )
 
-        best = max(all_results, key=lambda item: item.integrated_score)
-        return (
-            best,
-            DomainRankingSet(
-                crop=crop_rankings_by_system[best.grow_system_name],
-                algae=algae_rankings,
-                microbial=microbial_rankings,
-            ),
-            grow_system_lookup[best.grow_system_name],
-        )
+        sorted_results = sorted(all_results, key=lambda item: item.integrated_score, reverse=True)
+        shortlist = [
+            self._build_selection(
+                result=item,
+                crop_rankings_by_system=crop_rankings_by_system,
+                algae_rankings=algae_rankings,
+                microbial_rankings=microbial_rankings,
+                grow_system_lookup=grow_system_lookup,
+            )
+            for item in sorted_results[:4]
+        ]
+        return shortlist[0], shortlist
 
     def evaluate_selected_configuration(
         self,
@@ -105,7 +107,7 @@ class IntegrationEngine:
         risk_bias: float = 1.0,
         complexity_bias: float = 1.0,
         loop_bias: float = 1.0,
-    ) -> tuple[IntegratedResult, DomainRankingSet, GrowingSystem]:
+    ) -> IntegratedSelection:
         """Score an explicit crop/algae/microbial stack without changing the chosen domains."""
 
         crops = self.provider.get_crops()
@@ -161,14 +163,12 @@ class IntegrationEngine:
             )
 
         best = max(candidate_results, key=lambda item: item.integrated_score)
-        return (
-            best,
-            DomainRankingSet(
-                crop=crop_rankings_by_system[best.grow_system_name],
-                algae=algae_rankings,
-                microbial=microbial_rankings,
-            ),
-            grow_system_lookup[best.grow_system_name],
+        return self._build_selection(
+            result=best,
+            crop_rankings_by_system=crop_rankings_by_system,
+            algae_rankings=algae_rankings,
+            microbial_rankings=microbial_rankings,
+            grow_system_lookup=grow_system_lookup,
         )
 
     def _build_integrated_result(
@@ -216,6 +216,25 @@ class IntegrationEngine:
             interaction=interaction,
             grow_system_name=grow_system.name,
             integrated_score=round(integrated_score, 3),
+        )
+
+    def _build_selection(
+        self,
+        *,
+        result: IntegratedResult,
+        crop_rankings_by_system: dict[str, list[DomainEvaluation]],
+        algae_rankings: list[DomainEvaluation],
+        microbial_rankings: list[DomainEvaluation],
+        grow_system_lookup: dict[str, GrowingSystem],
+    ) -> IntegratedSelection:
+        return IntegratedSelection(
+            result=result,
+            ranked_candidates=DomainRankingSet(
+                crop=crop_rankings_by_system[result.grow_system_name],
+                algae=algae_rankings,
+                microbial=microbial_rankings,
+            ),
+            grow_system=grow_system_lookup[result.grow_system_name],
         )
 
     def _find_named_evaluation(

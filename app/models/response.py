@@ -25,6 +25,13 @@ class MissionStatus(StrEnum):
     CRITICAL = "CRITICAL"
 
 
+class AIStatusMode(StrEnum):
+    RERANKED = "reranked"
+    REVIEWED = "reviewed"
+    FALLBACK = "fallback"
+    DISABLED = "disabled"
+
+
 class MetricBreakdown(BaseModel):
     """Normalized crop metric view for UI presentation."""
 
@@ -183,6 +190,18 @@ class ExplanationBundle(BaseModel):
     weak_points: str
 
 
+class AIStatus(BaseModel):
+    """Backend-reported AI review state for recommendation responses."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: AIStatusMode
+    provider: str
+    reviewed: bool = False
+    selection_changed: bool = False
+    message: str = ""
+
+
 class UIEnhancedNarrative(BaseModel):
     """UI-ready Gemini or deterministic summary layer."""
 
@@ -330,6 +349,7 @@ class RecommendationResponse(BaseModel):
     ranked_candidates: RankedCandidatesBundle
     scores: ScoreBundle
     explanations: ExplanationBundle
+    ai_status: AIStatus
     ui_enhanced: UIEnhancedNarrative
     llm_analysis: LLMAnalysis
     top_crops: list[CropRecommendation]

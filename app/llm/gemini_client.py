@@ -144,8 +144,9 @@ class GeminiClient:
                     "rationale": "string",
                 },
                 "second_pass": {
-                    "decision": "retain|refine",
+                    "decision": "retain|rerank",
                     "rationale": "string",
+                    "selected_candidate_id": "string|null",
                     "selected_configuration": {
                         "crop": "string|null",
                         "algae": "string|null",
@@ -156,26 +157,33 @@ class GeminiClient:
             },
         }
         return (
-            "You are the summary rewriter, critic, explainer, tradeoff analyzer, and improvement suggester for a "
-            "deterministic closed-loop mission decision engine. The deterministic result is authoritative. "
-            "You must NOT score candidates, rescore candidates, replace the decision engine, or invent a new "
-            "selection workflow. Your job is to rewrite concise UI-ready summaries and analyze the already-selected "
-            "deterministic configuration.\n\n"
+            "You are the summary rewriter, shortlist reviewer, reranking critic, explainer, tradeoff analyzer, and "
+            "improvement suggester for a deterministic closed-loop mission decision engine. The deterministic engine "
+            "provides the only valid shortlist. You may review and rerank ONLY the candidates inside "
+            "`candidate_shortlist`. You must NOT invent candidates, score anything outside the shortlist, or create "
+            "a new selection workflow.\n\n"
             "Optimize for low token usage, low verbosity, concise outputs, and no repetition.\n\n"
             "Focus on:\n"
-            "1. Rewrite concise UI notes for crop, algae, and microbial cards based only on deterministic facts.\n"
-            "2. Write a short executive summary of the integrated stack.\n"
-            "3. Write an adaptation summary only if the payload includes events, deltas, or state change context.\n"
-            "4. Explain why the deterministic configuration makes sense.\n"
-            "5. Identify weak links, tradeoffs, and improvements.\n"
-            "6. Provide one alternative configuration idea and one second-pass recommendation object.\n"
-            "7. Reason explicitly about crop vs algae vs microbial roles.\n"
-            "8. If state or event data exists, comment on resilience and degradation over time.\n\n"
+            "1. Review `candidate_shortlist` and choose exactly one `selected_candidate_id` from that shortlist.\n"
+            "2. If the deterministic top candidate is still best, set `decision` to `retain` and keep the baseline id.\n"
+            "3. If another shortlisted candidate is better, set `decision` to `rerank` and return that shortlist id.\n"
+            "4. Rewrite concise UI notes for crop, algae, and microbial cards using the candidate you selected.\n"
+            "5. Write a short executive summary of the selected integrated stack.\n"
+            "6. Write an adaptation summary only if the payload includes events, deltas, or state change context.\n"
+            "7. Explain why the selected shortlist candidate makes sense.\n"
+            "8. Identify weak links, tradeoffs, and improvements.\n"
+            "9. Provide one alternative configuration idea and one second-pass recommendation object.\n"
+            "10. Reason explicitly about crop vs algae vs microbial roles.\n"
+            "11. If state or event data exists, comment on resilience and degradation over time.\n\n"
             "UI layer rules:\n"
             "- Keep each card note to 1-3 short sentences.\n"
             "- Preserve technical truth from deterministic data.\n"
             "- Do not invent unsupported claims.\n"
             "- Keep executive_summary and adaptation_summary concise.\n\n"
+            "Rerank rules:\n"
+            "- `selected_candidate_id` must be one of the ids already present in `candidate_shortlist`.\n"
+            "- `selected_configuration` must match the candidate you selected.\n"
+            "- If you are uncertain, retain the baseline deterministic candidate instead of inventing a new one.\n\n"
             "Return ONLY valid JSON. Do not include markdown, code fences, commentary, or prose outside JSON. "
             "All keys must exist. If a value is not relevant, use an empty string, empty list, or empty object.\n\n"
             f"Expected JSON schema:\n{json.dumps(schema, ensure_ascii=True, indent=2)}\n\n"

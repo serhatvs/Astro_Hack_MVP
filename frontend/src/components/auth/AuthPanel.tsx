@@ -40,7 +40,7 @@ const AuthPanel = () => {
           password: normalizedPassword,
         });
         toast.success("Logged in", {
-          description: `${authenticatedUser.email} can now access AI-enhanced analysis.`,
+          description: `${authenticatedUser.email} now has an active session for protected features.`,
         });
       } else {
         const authenticatedUser = await register({
@@ -70,7 +70,7 @@ const AuthPanel = () => {
     try {
       await logout();
       toast.success("Logged out", {
-        description: "AI-enhanced access has been cleared for this browser session.",
+        description: "Protected account access has been cleared for this browser session.",
       });
     } catch {
       setFormMessage(GENERIC_RETRY_MESSAGE);
@@ -89,11 +89,11 @@ const AuthPanel = () => {
           <div className="space-y-1">
             <div className="inline-flex items-center gap-2 rounded border border-neon-cyan/35 bg-neon-cyan/10 px-2 py-1 text-[10px] font-mono uppercase tracking-wider text-neon-cyan">
               <Sparkles className="h-3.5 w-3.5" />
-              AI Access Enabled
+              Session Active
             </div>
             <p className="text-sm font-semibold text-foreground">{user.email}</p>
             <p className="text-xs text-foreground/70">
-              Authenticated sessions unlock AI-enhanced explanations while keeping credentials in an HTTP-only cookie.
+              Authenticated sessions protect account features and future quotas while keeping credentials in an HTTP-only cookie.
             </p>
           </div>
           <Button
@@ -120,7 +120,7 @@ const AuthPanel = () => {
             Account Access
           </p>
           <p className="mt-1 text-xs text-foreground/70">
-            Log in to unlock AI-enhanced recommendation text. Logged-out users still get deterministic analysis.
+            Use an account for protected features and future quotas. Mission planning will still attempt AI reranking when available.
           </p>
         </div>
       </div>
