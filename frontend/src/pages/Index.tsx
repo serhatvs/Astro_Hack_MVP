@@ -5,6 +5,7 @@ import { toast } from "sonner";
 
 import AuthPanel from "@/components/auth/AuthPanel";
 import MissionInput from "@/components/dashboard/MissionInput";
+import RankedDomainAccordion from "@/components/dashboard/RankedDomainAccordion";
 import RankedCropAccordion from "@/components/dashboard/RankedCropAccordion";
 import LiveTelemetry from "@/components/dashboard/LiveTelemetry";
 import LanguageToggle from "@/components/LanguageToggle";
@@ -353,7 +354,7 @@ const Index = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1.3fr_0.7fr]">
+            <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
               <div className="rounded-lg border border-glass-border bg-black/10 p-3">
                 <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
                   Ranked Crop Candidates
@@ -364,12 +365,19 @@ const Index = () => {
                 />
               </div>
 
-              <div className="rounded-lg border border-neon-orange/25 bg-neon-orange/5 p-3">
-                <p className="text-[10px] font-mono uppercase tracking-wider text-neon-orange">{t("operational_note")}</p>
-                <p className="mt-2 text-xs leading-relaxed text-foreground/80">
-                  {currentRecommendation.operational_note || t("recommendation_ready_note")}
-                </p>
-              </div>
+              <RankedDomainAccordion
+                title={t("algae_layer")}
+                candidates={currentRecommendation.ranked_candidates?.algae ?? []}
+                selectedName={currentRecommendation.selected_system?.algae?.name ?? null}
+                emptyMessage={t("recommendation_missing_stack")}
+              />
+
+              <RankedDomainAccordion
+                title={t("microbial_layer")}
+                candidates={currentRecommendation.ranked_candidates?.microbial ?? []}
+                selectedName={currentRecommendation.selected_system?.microbial?.name ?? null}
+                emptyMessage={t("recommendation_missing_stack")}
+              />
             </div>
           </div>
         )}
