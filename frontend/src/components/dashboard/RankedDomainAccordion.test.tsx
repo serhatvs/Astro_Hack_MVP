@@ -44,6 +44,8 @@ describe("RankedDomainAccordion", () => {
     expect(screen.getByRole("button", { name: /dunaliella salina/i })).toBeInTheDocument();
     expect(screen.getByText("Selected")).toBeInTheDocument();
     expect(screen.getByText("Strong oxygen and biomass support.")).toBeInTheDocument();
+    expect(screen.getByText("Strengths")).toBeInTheDocument();
+    expect(screen.getByText("Tradeoffs")).toBeInTheDocument();
   });
 
   it("renders a safe empty state", () => {
