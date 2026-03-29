@@ -1,19 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowDownRight, ArrowLeft, ArrowRight, ArrowUpRight, Bot, FlaskConical, Loader2, Orbit, Play, ShieldAlert, Sparkles, Waves, Zap } from "lucide-react";
+import { ArrowDownRight, ArrowLeft, ArrowRight, ArrowUpRight, FlaskConical, Loader2, Orbit, Play, ShieldAlert, Waves, Zap } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { generateSimulationInsight, stepMission } from "@/lib/api";
+import { stepMission } from "@/lib/api";
 import { buildLayerSummaries, formatLabel, getExecutiveSummary } from "@/lib/mission-view";
 import { loadSimulationSession, saveSimulationSession, type SimulationSession } from "@/lib/simulation-session";
-import type {
-  AIInsight,
-  AIInsightKind,
-  MissionEventsPayload,
-  MissionStatus,
-} from "@/lib/types";
+import type { MissionEventsPayload, MissionStatus } from "@/lib/types";
 
 interface SimulationRouteState {
   session?: SimulationSession;
@@ -50,7 +45,7 @@ const formatPercentish = (value?: number | null) => {
 const formatDeltaArrow = (delta?: number | null) => {
   if (typeof delta !== "number" || Number.isNaN(delta) || Math.abs(delta) < 0.01) {
     return {
-      arrow: "→",
+      arrow: "->",
       tone: "text-muted-foreground",
       label: "Stable",
     };
@@ -58,14 +53,14 @@ const formatDeltaArrow = (delta?: number | null) => {
 
   if (delta > 0) {
     return {
-      arrow: "↑",
+      arrow: "UP",
       tone: "text-neon-red",
       label: `+${delta.toFixed(2)}`,
     };
   }
 
   return {
-    arrow: "↓",
+    arrow: "DOWN",
     tone: "text-neon-green",
     label: delta.toFixed(2),
   };
@@ -104,12 +99,12 @@ const parseSystemChange = (value: string) => {
 
 const buildEventFeedback = (events: MissionEventsPayload | null | undefined) => {
   if (!events) {
-    return "No weekly event applied yet.";
+    return "Baseline week only.";
   }
 
   const active = Object.entries(events).filter(([, value]) => value !== null && value !== undefined);
   if (active.length === 0) {
-    return "No weekly event applied yet.";
+    return "Baseline week only.";
   }
 
   const fragments = active.map(([key, value]) => {
@@ -120,7 +115,7 @@ const buildEventFeedback = (events: MissionEventsPayload | null | undefined) => 
     return label;
   });
 
-  return `${fragments.join(" | ")} applied this week`;
+  return `${fragments.join(" | ")} applied`;
 };
 
 const buildImpactSnapshot = (
@@ -144,7 +139,7 @@ const buildImpactSnapshot = (
   }
 
   if (fragments.length === 0) {
-    return "This week preserved the current ecosystem conditions.";
+    return "This week held close to the prior ecosystem baseline.";
   }
 
   const base = fragments.slice(0, 2).join(" and ");
@@ -158,7 +153,7 @@ const buildImpactSnapshot = (
           : "while risk held near baseline";
   const systemEffect = systemChanged ? " while forcing a stack adjustment" : "";
 
-  return `This week, ${base.toLowerCase()} ${riskEffect}${systemEffect}.`;
+  return `${base}. ${riskEffect.charAt(0).toUpperCase()}${riskEffect.slice(1)}${systemEffect}.`;
 };
 
 const buildLayerInteractionHints = (
@@ -291,12 +286,6 @@ const Simulation = () => {
   const [yieldDrop, setYieldDrop] = useState("");
   const [isApplyingStep, setIsApplyingStep] = useState(false);
   const [showUpdateHighlight, setShowUpdateHighlight] = useState(false);
-  const [introInsight, setIntroInsight] = useState<AIInsight | null>(null);
-  const [endInsight, setEndInsight] = useState<AIInsight | null>(null);
-  const [deepInsight, setDeepInsight] = useState<AIInsight | null>(null);
-  const [isLoadingIntroInsight, setIsLoadingIntroInsight] = useState(false);
-  const [isLoadingEndInsight, setIsLoadingEndInsight] = useState(false);
-  const [isLoadingDeepInsight, setIsLoadingDeepInsight] = useState(false);
 
   useEffect(() => {
     if (!session) {
@@ -314,135 +303,23 @@ const Simulation = () => {
     return () => window.clearTimeout(timer);
   }, [showUpdateHighlight]);
 
-  const buildInsightRequest = (kind: AIInsightKind, premium = false) => {
-    if (!session) {
-      return null;
-    }
-
-    return {
-      kind,
-      mission_profile: session.mission_profile,
-      selected_system: session.selected_system,
-      scores: session.scores,
-      explanations: session.explanations,
-      mission_state: session.mission_state,
-      ui_enhanced: session.ui_enhanced,
-      llm_analysis: session.llm_analysis,
-      mission_status: session.mission_status,
-      events: "events" in session ? session.events ?? undefined : undefined,
-      adaptation_summary:
-        ("adaptation_summary" in session ? session.adaptation_summary : "") ||
-        session.ui_enhanced?.adaptation_summary ||
-        "",
-      premium,
-    };
-  };
-
-  useEffect(() => {
-    if (!session || session.mission_state.time !== 0 || introInsight || isLoadingIntroInsight) {
-      return;
-    }
-
-    const payload = buildInsightRequest("simulation_intro");
-    if (!payload) {
-      return;
-    }
-
-    let active = true;
-    setIsLoadingIntroInsight(true);
-    generateSimulationInsight(payload)
-      .then((insight) => {
-        if (!active) {
-          return;
-        }
-        setIntroInsight(insight);
-      })
-      .catch((error) => {
-        if (!active) {
-          return;
-        }
-        const message = error instanceof Error ? error.message : "Unable to load the AI intro insight.";
-        toast.error("AI intro unavailable", { description: message });
-      })
-      .finally(() => {
-        if (active) {
-          setIsLoadingIntroInsight(false);
-        }
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [introInsight, isLoadingIntroInsight, session]);
-
-  useEffect(() => {
-    if (!session || endInsight || isLoadingEndInsight) {
-      return;
-    }
-
-    const endReason = session.mission_state.end_reason;
-    const riskLevel = session.mission_state.system_metrics.risk_level;
-    const maxWeeks = session.mission_state.max_weeks ?? durationWeekTargets[session.mission_state.duration];
-    const ended =
-      endReason === "water_depleted" ||
-      endReason === "energy_depleted" ||
-      endReason === "risk_collapse" ||
-      endReason === "duration_complete" ||
-      session.mission_state.time >= maxWeeks ||
-      riskLevel >= 85;
-    if (!ended) {
-      return;
-    }
-
-    const payload = buildInsightRequest("simulation_end");
-    if (!payload) {
-      return;
-    }
-
-    let active = true;
-    setIsLoadingEndInsight(true);
-    generateSimulationInsight(payload)
-      .then((insight) => {
-        if (!active) {
-          return;
-        }
-        setEndInsight(insight);
-      })
-      .catch((error) => {
-        if (!active) {
-          return;
-        }
-        const message = error instanceof Error ? error.message : "Unable to load the AI end insight.";
-        toast.error("AI end insight unavailable", { description: message });
-      })
-      .finally(() => {
-        if (active) {
-          setIsLoadingEndInsight(false);
-        }
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [endInsight, isLoadingEndInsight, session]);
-
   if (!session) {
     return (
       <div className="min-h-screen w-full bg-background p-3">
         <div className="mx-auto flex min-h-[calc(100vh-1.5rem)] max-w-[1200px] items-center justify-center">
           <div className="glass-panel flex w-full max-w-2xl flex-col gap-4 overflow-hidden p-6 text-center">
             <div className="space-y-2">
-              <h1 className="text-lg font-bold tracking-wide neon-text-cyan">Ecosystem Simulation</h1>
+              <h1 className="text-lg font-bold tracking-wide neon-text-cyan">Mission Validation Simulation</h1>
               <p className="text-sm text-muted-foreground">
-                No active simulation session was found. Start from the mission planner to choose a biological stack
-                and launch a new ecosystem simulation.
+                No active simulation session was found. Return to the mission planner, generate a plan, and launch a
+                validation run from there.
               </p>
             </div>
             <div className="flex justify-center">
               <Button asChild className="bg-primary text-primary-foreground hover:bg-primary/90">
                 <Link to="/">
                   <ArrowLeft className="mr-2 h-4 w-4" />
-                  Back To Mission Planner
+                  Back to Mission Planner
                 </Link>
               </Button>
             </div>
@@ -471,15 +348,11 @@ const Simulation = () => {
   const alternativeText =
     Object.values(session.llm_analysis?.alternative ?? {})
       .slice(0, 2)
-      .join(" / ") || "None suggested";
+      .join(" / ") || "No alternate reference retained.";
   const adaptationSummary =
     ("adaptation_summary" in session ? session.adaptation_summary : "") ||
     session.ui_enhanced?.adaptation_summary ||
-    "Simulation initialized with the selected biological stack. Apply mission events to see how the loop responds.";
-  const introInsightSummary =
-    introInsight?.summary ||
-    executiveSummary ||
-    "AI insight will summarize expected ecosystem behavior at the start of the simulation.";
+    "Simulation initialized from the selected biological stack. Advance a week or apply an event to inspect system response.";
   const maxWeeks = missionState.max_weeks ?? durationWeekTargets[missionState.duration];
   const recoveredWater = missionState.last_recovered_water ?? 0;
   const recoveryQueueSize = missionState.water_recovery_queue?.length ?? 0;
@@ -535,10 +408,6 @@ const Simulation = () => {
         : riskDelta < -0.05
           ? "Decreased"
         : "Stable";
-  const activeAIInsight = deepInsight || (simulationStatus === "running" ? introInsight : endInsight);
-  const aiInsightTone = activeAIInsight?.generated_by_ai
-    ? "border-neon-cyan/35 bg-neon-cyan/8 text-neon-cyan"
-    : "border-glass-border bg-muted/10 text-muted-foreground";
   const previousPlantSystem =
     previousLayerSummaries.find((layer) => layer.type === "crop")?.supportSystem ||
     parsedSystemChanges.find((item) => item.kind === "grow_system")?.from ||
@@ -652,7 +521,6 @@ const Simulation = () => {
       });
       setPreviousSession(currentSession);
       setSession(response);
-      setDeepInsight(null);
       saveSimulationSession(response, currentSession, initialSession);
       setShowUpdateHighlight(true);
       setWaterDrop("");
@@ -670,29 +538,6 @@ const Simulation = () => {
     }
   };
 
-  const handleDeepAnalysis = async (premium = false) => {
-    const payload = buildInsightRequest("deep_analysis", premium);
-    if (!payload) {
-      return;
-    }
-
-    setIsLoadingDeepInsight(true);
-    try {
-      const insight = await generateSimulationInsight(payload);
-      setDeepInsight(insight);
-      toast.success("AI analysis ready", {
-        description: insight.generated_by_ai
-          ? `${insight.model_tier.toUpperCase()} insight generated.`
-          : "Deterministic fallback insight returned.",
-      });
-    } catch (requestError) {
-      const message = requestError instanceof Error ? requestError.message : "Unable to analyze the current ecosystem.";
-      toast.error("AI analysis failed", { description: message });
-    } finally {
-      setIsLoadingDeepInsight(false);
-    }
-  };
-
   const handleRunAgain = () => {
     if (!initialSession) {
       navigate("/");
@@ -707,9 +552,6 @@ const Simulation = () => {
     setContamination("");
     setYieldDrop("");
     setShowUpdateHighlight(false);
-    setEndInsight(null);
-    setDeepInsight(null);
-    setIntroInsight(null);
     toast.success("Simulation reset", {
       description: "The ecosystem returned to its initial launch state.",
     });
@@ -777,29 +619,6 @@ const Simulation = () => {
               <p className="mt-2 text-sm leading-relaxed text-foreground/80">{adaptationSummary}</p>
             </div>
 
-            <div className={`rounded-lg border p-4 ${aiInsightTone}`}>
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-[10px] font-mono uppercase tracking-wider">
-                  AI Outcome Insight
-                </p>
-                <span className="rounded border border-current/30 px-2 py-0.5 text-[10px] font-mono uppercase tracking-wider">
-                  {endInsight?.generated_by_ai ? endInsight.model_tier : "fallback"}
-                </span>
-              </div>
-              <p className="mt-2 text-sm leading-relaxed text-foreground/85">
-                {isLoadingEndInsight
-                  ? "Generating a final AI explanation for the completed simulation..."
-                  : endInsight?.summary || adaptationSummary}
-              </p>
-              {(endInsight?.highlights?.length ?? 0) > 0 && (
-                <div className="mt-3 space-y-1 text-xs text-foreground/80">
-                  {endInsight?.highlights.slice(0, 3).map((item) => (
-                    <p key={item}>• {item}</p>
-                  ))}
-                </div>
-              )}
-            </div>
-
             {recentTimeline.length > 0 && (
               <div className="rounded-lg border border-glass-border bg-muted/10 p-4">
                 <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Last Events</p>
@@ -824,7 +643,7 @@ const Simulation = () => {
               <Button asChild variant="outline" className="h-11 border-glass-border bg-muted/20 text-foreground hover:bg-muted/35">
                 <Link to="/">
                   <ArrowLeft className="mr-2 h-4 w-4" />
-                  Back To Mission
+                  Back to Mission Planner
                 </Link>
               </Button>
             </div>
@@ -839,7 +658,7 @@ const Simulation = () => {
               <div className="flex flex-wrap items-center gap-2">
                 <div className="h-2 w-2 rounded-full bg-neon-cyan blink" />
                 <h1 className="text-sm font-bold font-mono uppercase tracking-[0.28em] neon-text-cyan">
-                  Ecosystem Simulation
+                  Mission Validation Simulation
                 </h1>
                 <span className={`rounded border px-2 py-0.5 text-[10px] font-mono ${statusClass(session.mission_status)}`}>
                   {session.mission_status}
@@ -848,9 +667,9 @@ const Simulation = () => {
                   Simulation Status: {simulationStatusLabel}
                 </span>
               </div>
-              <p className="max-w-4xl text-sm text-foreground/80">
-                {executiveSummary || "Simulation session is active."}
-              </p>
+                <p className="max-w-4xl text-sm text-foreground/80">
+                  {executiveSummary || "Validation session is active for the selected mission stack."}
+                </p>
               <div className="flex flex-wrap gap-3 text-[11px] font-mono text-muted-foreground">
                 <span>Environment: <span className="text-foreground">{formatLabel(missionState.environment)}</span></span>
                 <span>Mission Duration: <span className="text-foreground">{formatLabel(missionState.duration)}</span></span>
@@ -870,28 +689,18 @@ const Simulation = () => {
               </div>
             </div>
 
-            <div className="flex shrink-0 items-start gap-2">
-              <div className="rounded-lg border border-neon-orange/25 bg-neon-orange/5 px-3 py-2 text-right">
-                <p className="text-[9px] font-mono uppercase tracking-wider text-neon-orange">Operational Note</p>
-                <p className="mt-1 max-w-sm text-xs leading-relaxed text-foreground/75">{session.operational_note}</p>
+              <div className="flex shrink-0 items-start gap-2">
+                <div className="rounded-lg border border-neon-orange/25 bg-neon-orange/5 px-3 py-2 text-right">
+                  <p className="text-[9px] font-mono uppercase tracking-wider text-neon-orange">Operational Note</p>
+                  <p className="mt-1 max-w-sm text-xs leading-relaxed text-foreground/75">{session.operational_note}</p>
+                </div>
+                <Button asChild variant="outline" className="border-glass-border bg-muted/20 text-foreground hover:bg-muted/35">
+                  <Link to="/">
+                    <ArrowLeft className="h-4 w-4" />
+                    Planner
+                  </Link>
+                </Button>
               </div>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => void handleDeepAnalysis(false)}
-                disabled={isLoadingDeepInsight}
-                className="border-neon-cyan/30 bg-neon-cyan/10 text-neon-cyan hover:bg-neon-cyan/20"
-              >
-                {isLoadingDeepInsight ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
-                Analyze System
-              </Button>
-              <Button asChild variant="outline" className="border-glass-border bg-muted/20 text-foreground hover:bg-muted/35">
-                <Link to="/">
-                  <ArrowLeft className="h-4 w-4" />
-                  Back
-                </Link>
-              </Button>
-            </div>
           </div>
         </div>
 
@@ -979,7 +788,7 @@ const Simulation = () => {
             <div className="flex items-center gap-2">
               <Orbit className="h-4 w-4 text-neon-cyan" />
               <h2 className="text-[10px] font-mono uppercase tracking-[0.24em] text-muted-foreground">
-                Current System Metrics
+                System Metrics
               </h2>
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-1">
@@ -1048,7 +857,7 @@ const Simulation = () => {
             </div>
 
             <div className="rounded-lg border border-glass-border bg-black/10 px-3 py-2 text-xs text-muted-foreground">
-              Each progression advances the ecosystem by one week. Leave the event fields empty to run a baseline week.
+              Each step advances one week. Leave the fields empty to run baseline load only.
             </div>
             <div
               className={`rounded-lg border px-3 py-2 text-xs ${
@@ -1077,7 +886,7 @@ const Simulation = () => {
             <div className="flex items-center gap-2">
               <Waves className="h-4 w-4 text-neon-cyan" />
               <h2 className="text-[10px] font-mono uppercase tracking-[0.24em] text-muted-foreground">
-                Adaptation & Results
+                Weekly Outcome
               </h2>
             </div>
             <div
@@ -1134,7 +943,7 @@ const Simulation = () => {
                   {previousStackLabel ? `${previousStackLabel} -> ${currentStackLabel}` : currentStackLabel}
                 </p>
                 <p className="mt-1 text-xs font-mono text-muted-foreground">
-                  {previousStackLabel && previousStackLabel !== currentStackLabel ? "Layer change detected" : "Current stack active"}
+                  {previousStackLabel && previousStackLabel !== currentStackLabel ? "Layer change detected" : "Current stack retained"}
                 </p>
               </div>
               <div className="rounded-lg border border-glass-border bg-muted/10 p-3">
@@ -1156,7 +965,7 @@ const Simulation = () => {
                 </div>
               ) : (
                 <p className="text-xs text-muted-foreground">
-                  No configuration change has been required yet. The current biological stack is still holding.
+                  No stack reconfiguration was required this week.
                 </p>
               )}
             </div>
@@ -1214,7 +1023,7 @@ const Simulation = () => {
                 </div>
               ) : (
                 <p className="text-xs text-muted-foreground">
-                  No layer switch or visible rank shift has occurred yet in this simulation session.
+                  No layer switch or visible rank shift occurred this week.
                 </p>
               )}
             </div>
@@ -1224,34 +1033,17 @@ const Simulation = () => {
             <div className="flex items-center gap-2">
               <ShieldAlert className="h-4 w-4 text-neon-orange" />
               <h2 className="text-[10px] font-mono uppercase tracking-[0.24em] text-muted-foreground">
-                Analysis & Event Trace
+                State Trace
               </h2>
             </div>
 
-            <div className={`rounded-lg border p-3 ${aiInsightTone}`}>
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <Bot className="h-4 w-4" />
-                  <p className="text-[10px] font-mono uppercase tracking-wider">
-                    AI Insight
-                  </p>
-                </div>
-                <span className="rounded border border-current/30 px-2 py-0.5 text-[10px] font-mono uppercase tracking-wider">
-                  {activeAIInsight?.generated_by_ai ? activeAIInsight.model_tier : "fallback"}
-                </span>
-              </div>
-              <p className="mt-2 text-xs leading-relaxed text-foreground/85">
-                {isLoadingIntroInsight && simulationStatus === "running"
-                  ? "Generating a short AI introduction for this ecosystem stack..."
-                  : activeAIInsight?.summary || introInsightSummary}
+            <div className="rounded-lg border border-glass-border bg-muted/10 p-3">
+              <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+                Validation Brief
               </p>
-              {(activeAIInsight?.highlights?.length ?? 0) > 0 && (
-                <div className="mt-3 space-y-1 text-xs text-foreground/80">
-                  {activeAIInsight?.highlights.slice(0, 3).map((item) => (
-                    <p key={item}>• {item}</p>
-                  ))}
-                </div>
-              )}
+              <p className="mt-2 text-xs leading-relaxed text-foreground/85">
+                {executiveSummary || "The simulation is validating the current deterministic mission plan."}
+              </p>
             </div>
 
             <div className="rounded-lg border border-glass-border bg-terminal p-3">
@@ -1285,7 +1077,7 @@ const Simulation = () => {
                     <p key={item}>{item}</p>
                   ))}
                   {improvementCues.length === 0 && (
-                    <p className="text-muted-foreground">No additional deterministic stability cue was raised for the current state.</p>
+                    <p className="text-muted-foreground">No additional stability cue was raised for the current state.</p>
                   )}
                 </div>
               </div>
@@ -1297,7 +1089,7 @@ const Simulation = () => {
                 <p className="mt-1 break-all text-foreground">{missionState.mission_id}</p>
               </div>
               <div className="rounded-lg border border-glass-border bg-muted/10 p-3">
-                <p>Reference Concept</p>
+                <p>Reference Note</p>
                 <p className="mt-1 text-foreground">
                   {alternativeText}
                 </p>

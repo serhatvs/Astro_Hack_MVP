@@ -42,9 +42,6 @@ from app.models.mission import (
     downgrade_constraint,
 )
 from app.models.response import (
-    AIInsight,
-    AIInsightKind,
-    AIInsightRequest,
     CropRecommendation,
     DomainScoreBundle,
     DomainScoreVector,
@@ -530,19 +527,6 @@ class RecommendationEngine:
             adaptation_summary=adaptation_summary,
             events=request.events,
             request=request,
-        )
-
-    def generate_ai_insight(self, request: AIInsightRequest) -> AIInsight:
-        """Generate low-frequency AI insight without touching deterministic simulation logic."""
-
-        if request.kind is AIInsightKind.SIMULATION_INTRO:
-            return self.ai_service.generate_simulation_intro_explanation(request, use_ai=True)
-        if request.kind is AIInsightKind.SIMULATION_END:
-            return self.ai_service.generate_simulation_end_explanation(request, use_ai=True)
-        return self.ai_service.generate_deep_analysis(
-            request,
-            use_ai=True,
-            premium=request.premium,
         )
 
     def _compose_recommendation_response(

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -8,7 +8,6 @@ import Simulation from "@/pages/Simulation";
 import type { SimulationStartResponse } from "@/lib/types";
 
 vi.mock("@/lib/api", () => ({
-  generateSimulationInsight: vi.fn(),
   stepMission: vi.fn(),
 }));
 
@@ -149,15 +148,6 @@ const session: SimulationStartResponse = {
 
 describe("Simulation page", () => {
   beforeEach(() => {
-    vi.mocked(api.generateSimulationInsight).mockResolvedValue({
-      kind: "simulation_intro",
-      title: "AI Insight",
-      summary: "AI intro summary",
-      highlights: ["Expected oxygen support remains stable."],
-      generated_by_ai: true,
-      model_tier: "flash",
-      model_name: "gemini-2.5-flash",
-    });
     vi.mocked(api.stepMission).mockResolvedValue({
       ...session,
       mission_state: {
@@ -201,17 +191,16 @@ describe("Simulation page", () => {
       </MemoryRouter>
     );
 
-    expect(screen.getByText("Ecosystem Simulation")).toBeInTheDocument();
+    expect(screen.getByText("Mission Validation Simulation")).toBeInTheDocument();
     expect(screen.getByText("Lactuca Sativa (Marul)")).toBeInTheDocument();
     expect(screen.getByText("Chlorella Vulgaris")).toBeInTheDocument();
     expect(screen.getByText("Saccharomyces Boulardii")).toBeInTheDocument();
-    expect(screen.getByText("Custom simulation executive summary")).toBeInTheDocument();
+    expect(screen.getAllByText("Custom simulation executive summary").length).toBeGreaterThan(0);
     expect(screen.getByText(/Current Week:/i)).toBeInTheDocument();
     expect(screen.getByText(/Recovered Water:/i)).toBeInTheDocument();
     expect(screen.getByText(/photosynthesis/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Next Week/i })).toBeInTheDocument();
-    await waitFor(() => expect(api.generateSimulationInsight).toHaveBeenCalled());
-    expect(screen.getByText("AI Insight")).toBeInTheDocument();
+    expect(screen.getByText("Validation Brief")).toBeInTheDocument();
   });
 
   it("restores the latest simulation session from localStorage on refresh", async () => {
@@ -228,8 +217,7 @@ describe("Simulation page", () => {
     expect(screen.getByText("Lactuca Sativa (Marul)")).toBeInTheDocument();
     expect(screen.getByText("Deterministic Simulation")).toBeInTheDocument();
     expect(screen.getByText(/Planned Horizon:/i)).toBeInTheDocument();
-    await waitFor(() => expect(api.generateSimulationInsight).toHaveBeenCalled());
-    expect(screen.getByText("AI Insight")).toBeInTheDocument();
+    expect(screen.getByText("Validation Brief")).toBeInTheDocument();
   });
 
   it("shows a strong failure banner when the simulation reaches a critical state", async () => {
@@ -245,16 +233,6 @@ describe("Simulation page", () => {
         },
       },
     };
-    vi.mocked(api.generateSimulationInsight).mockResolvedValueOnce({
-      kind: "simulation_end",
-      title: "AI Outcome Insight",
-      summary: "AI end summary",
-      highlights: ["System risk exceeded safe limits."],
-      generated_by_ai: true,
-      model_tier: "flash",
-      model_name: "gemini-2.5-flash",
-    });
-
     render(
       <MemoryRouter initialEntries={[{ pathname: "/simulation", state: { session: failedSession } }]}>
         <Routes>
@@ -267,8 +245,7 @@ describe("Simulation page", () => {
     expect(screen.getByText("System Failure")).toBeInTheDocument();
     expect(screen.getByText("Run Again")).toBeInTheDocument();
     expect(screen.getByText(/^Final Risk Level$/i)).toBeInTheDocument();
-    await waitFor(() => expect(api.generateSimulationInsight).toHaveBeenCalled());
-    expect(screen.getByText("AI Outcome Insight")).toBeInTheDocument();
+    expect(screen.getByText("Final Deterministic Summary")).toBeInTheDocument();
   });
 
   it("resets back to the initial simulation state when Run Again is selected", async () => {
@@ -321,7 +298,6 @@ describe("Simulation page", () => {
     expect(screen.getByText("Deterministic Simulation")).toBeInTheDocument();
     expect(screen.getByText(/Simulation Status: Running/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Next Week/i })).toBeInTheDocument();
-    await waitFor(() => expect(api.generateSimulationInsight).toHaveBeenCalled());
-    expect(screen.getByText("AI Insight")).toBeInTheDocument();
+    expect(screen.getByText("Validation Brief")).toBeInTheDocument();
   });
 });

@@ -63,12 +63,11 @@ const SimulationLauncher = ({ recommendation, isStarting, onStart }: SimulationL
             Start Simulation
           </h3>
           <p className="max-w-3xl text-xs text-foreground/75">
-            Launch a mission-aware ecosystem simulation using a custom crop, algae, and microbial stack. The current
-            recommendation is used as the default starting point.
+            Validate the recommended ecosystem over time. Adjust the crop, algae, and microbial layers before launch.
           </p>
         </div>
         <div className="rounded border border-glass-border bg-muted/20 px-3 py-1.5 text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
-          {recommendation ? "Recommendation loaded" : "Generate plan to unlock"}
+          {recommendation ? "Plan ready" : "Generate plan first"}
         </div>
       </div>
 
@@ -141,7 +140,7 @@ const SimulationLauncher = ({ recommendation, isStarting, onStart }: SimulationL
             className="h-9 w-full bg-primary font-bold uppercase tracking-wider text-primary-foreground pulse-glow hover:bg-primary/90"
           >
             {isStarting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
-            {isStarting ? "Launching" : "Start Simulation"}
+            {isStarting ? "Starting Simulation" : "Start Simulation"}
           </Button>
         </div>
       </div>
@@ -149,13 +148,13 @@ const SimulationLauncher = ({ recommendation, isStarting, onStart }: SimulationL
       <div className="rounded-lg border border-glass-border bg-black/10 px-3 py-2">
         {selectedSummary ? (
           <div className="space-y-1">
-            <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Simulation Seed</p>
+            <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Launch Stack</p>
             <p className="text-sm text-foreground/85">{selectedSummary}</p>
           </div>
         ) : (
           <p className="text-xs text-muted-foreground">
             Generate a mission plan first, then adjust the recommended biological layers before starting the
-            ecosystem simulation.
+            validation run.
           </p>
         )}
       </div>

@@ -119,7 +119,7 @@ const Index = () => {
               <div className="flex min-w-0 items-center gap-2">
                 <div className="h-2 w-2 rounded-full bg-neon-green blink" />
                 <h1 className="truncate text-sm font-bold font-mono uppercase tracking-widest neon-text-cyan">
-                  TUA Astro-Tarim Karar Motoru
+                  TUA Astro-Tarim Mission Planner
                 </h1>
               </div>
               <span className="rounded border border-glass-border px-1.5 py-0.5 text-[9px] font-mono text-muted-foreground">
@@ -163,7 +163,7 @@ const Index = () => {
                   Mission Summary
                 </h2>
                 <p className="max-w-4xl text-sm text-foreground/80">
-                  {executiveSummary || "Recommendation prepared. Adjust the ecosystem layers below before starting the simulation."}
+                  {executiveSummary || "Recommendation prepared. Review the mission summary, then launch a validation run if needed."}
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono text-muted-foreground">
@@ -174,10 +174,10 @@ const Index = () => {
                       : "border-glass-border bg-muted/20 text-muted-foreground"
                   }`}
                 >
-                  Gemini
+                  AI Insight
                 </span>
                 <span className={geminiUsed ? "text-neon-cyan" : "text-muted-foreground"}>
-                  {geminiUsed ? "Gemini kullanildi" : "Gemini kullanilmadi"}
+                  {geminiUsed ? "Enabled" : "Fallback"}
                 </span>
                 <span>
                   Integrated score:{" "}
@@ -197,7 +197,7 @@ const Index = () => {
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1.3fr_0.7fr]">
               <div className="rounded-lg border border-glass-border bg-black/10 p-3">
                 <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
-                  Prepared Ecosystem Seed
+                  Recommended Validation Stack
                 </p>
                 <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
                   {layerSummaries.length > 0 ? (
@@ -223,7 +223,7 @@ const Index = () => {
                 <p className="text-[10px] font-mono uppercase tracking-wider text-neon-orange">Operational Note</p>
                 <p className="mt-2 text-xs leading-relaxed text-foreground/80">
                   {currentRecommendation.operational_note ||
-                    "The recommendation is ready. Launch simulation to stress the loop and inspect adaptation."}
+                    "The recommendation is ready. Launch a validation run to inspect loop resilience over time."}
                 </p>
               </div>
             </div>
@@ -236,13 +236,13 @@ const Index = () => {
               <>
                 <Loader2 className="h-8 w-8 animate-spin text-neon-cyan" />
                 <p className="text-sm font-mono text-foreground/80">
-                  Requesting recommendation from the backend and preparing a simulation-ready mission seed...
+                  Preparing a mission recommendation and validation-ready stack...
                 </p>
               </>
             ) : (
               <p className="text-sm font-mono text-muted-foreground">
-                Configure the mission above and click Generate Plan. The recommendation will be stored internally and
-                used to prefill the simulation launcher below.
+                Configure the mission above and click Generate Plan. The resulting stack will be stored safely and used
+                to prefill the simulation launcher below.
               </p>
             )}
           </div>
