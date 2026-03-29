@@ -128,3 +128,22 @@ def test_recommend_enables_ai_only_for_authenticated_sessions(monkeypatch) -> No
         logged_in = client.post("/recommend", json=_mission_payload())
         assert logged_in.status_code == 200
         assert captured_use_llm[-1] is True
+
+
+def test_login_sets_cross_site_cookie_attributes_for_production_frontend() -> None:
+    credentials = _credentials()
+    with TestClient(app, base_url="https://astrohackmvp-production.up.railway.app") as client:
+        client.post("/auth/register", json=credentials)
+        client.post("/auth/logout", headers={"Origin": "https://astro-hack-mvp-5kp6.vercel.app"})
+
+        response = client.post(
+            "/auth/login",
+            json=credentials,
+            headers={"Origin": "https://astro-hack-mvp-5kp6.vercel.app"},
+        )
+
+        assert response.status_code == 200
+        set_cookie = response.headers.get("set-cookie", "")
+        assert "SameSite=none" in set_cookie
+        assert "HttpOnly" in set_cookie
+        assert "Secure" in set_cookie

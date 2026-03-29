@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from urllib.parse import urlparse
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -37,24 +38,40 @@ def _cookie_secure(request: Request) -> bool:
     return host not in LOCAL_AUTH_HOSTS
 
 
+def _cookie_samesite(request: Request) -> Literal["lax", "none"]:
+    host = (request.url.hostname or "").strip().lower()
+    origin = (request.headers.get("origin") or "").strip()
+    origin_host = (urlparse(origin).hostname or "").strip().lower()
+
+    if (
+        origin_host
+        and origin_host not in LOCAL_AUTH_HOSTS
+        and host not in LOCAL_AUTH_HOSTS
+        and origin_host != host
+    ):
+        return "none"
+    return "lax"
+
+
 def _set_session_cookie(response: Response, request: Request, session_token: str) -> None:
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
         value=session_token,
         httponly=True,
-        samesite="lax",
+        samesite=_cookie_samesite(request),
         secure=_cookie_secure(request),
         max_age=60 * 60 * 12,
     )
 
 
-def clear_session_cookie(response: Response) -> None:
+def clear_session_cookie(response: Response, request: Request) -> None:
     """Remove the auth session cookie from the response."""
 
     response.delete_cookie(
         key=SESSION_COOKIE_NAME,
         httponly=True,
-        samesite="lax",
+        secure=_cookie_secure(request),
+        samesite=_cookie_samesite(request),
     )
 
 
@@ -166,7 +183,7 @@ def logout(
 
     session_token = _session_token_from_request(request)
     auth_service.revoke_session(session_token)
-    clear_session_cookie(response)
+    clear_session_cookie(response, request)
     logger.info("Auth logout completed.")
     return AuthLogoutResponse(success=True)
 

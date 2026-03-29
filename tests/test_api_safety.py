@@ -2,8 +2,6 @@ import time
 
 from fastapi.testclient import TestClient
 
-from app.api import protection
-from app.api.protection import COOLDOWN_MESSAGE, RATE_LIMIT_MESSAGE
 from app.llm.ai_service import AIService
 from app.main import app
 from app.models.response import GeminiNarrative, UIEnhancedNarrative
@@ -45,32 +43,12 @@ def _fallback_narrative() -> GeminiNarrative:
     )
 
 
-def test_recommend_enforces_cooldown_with_friendly_message() -> None:
-    headers = {"X-Session-ID": "cooldown-session"}
+def test_recommend_allows_repeated_requests_without_rate_limit() -> None:
+    headers = {"X-Session-ID": "no-rate-limit-session"}
 
-    first_response = client.post("/recommend", json=_mission_payload(), headers=headers)
-    assert first_response.status_code == 200
-
-    second_response = client.post("/recommend", json=_mission_payload(), headers=headers)
-
-    assert second_response.status_code == 429
-    assert second_response.json()["detail"] == COOLDOWN_MESSAGE
-
-
-def test_recommend_enforces_rate_limit_after_five_requests(monkeypatch) -> None:
-    now = [0.0]
-    monkeypatch.setattr(protection.time, "monotonic", lambda: now[0])
-    headers = {"X-Session-ID": "rate-limit-session"}
-
-    for _ in range(5):
+    for _ in range(6):
         response = client.post("/recommend", json=_mission_payload(), headers=headers)
         assert response.status_code == 200
-        now[0] += 10.1
-
-    blocked_response = client.post("/recommend", json=_mission_payload(), headers=headers)
-
-    assert blocked_response.status_code == 429
-    assert blocked_response.json()["detail"] == RATE_LIMIT_MESSAGE
 
 
 def test_ai_service_caches_identical_inputs() -> None:
