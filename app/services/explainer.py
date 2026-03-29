@@ -3,7 +3,15 @@
 from __future__ import annotations
 
 from app.core.scoring import ScoredCrop
-from app.models.mission import ChangeEvent, ConstraintLevel, Duration, Environment, Goal, MissionProfile
+from app.models.mission import (
+    ChangeEvent,
+    ConstraintLevel,
+    Duration,
+    Environment,
+    Goal,
+    MissionProfile,
+    is_tight_constraint,
+)
 from app.models.response import (
     CropRecommendation,
     MetricBreakdown,
@@ -71,9 +79,9 @@ class Explainer:
             ("Crew acceptance is lower than familiar fresh crops", 1 - (crop.crew_acceptance / 100)),
         ]
 
-        if mission.constraints.water is ConstraintLevel.LOW:
+        if is_tight_constraint(mission.constraints.water):
             candidates[1] = (candidates[1][0], candidates[1][1] + 0.10)
-        if mission.constraints.energy is ConstraintLevel.LOW:
+        if is_tight_constraint(mission.constraints.energy):
             candidates[2] = (candidates[2][0], candidates[2][1] + 0.10)
         if mission.duration is Duration.SHORT:
             candidates[3] = (candidates[3][0], candidates[3][1] + 0.10)
@@ -138,7 +146,7 @@ class Explainer:
         if scored_crop.crop.prefers_environment(mission.environment):
             return reason[:-1] + f" and it aligns well with {environment_label} mission conditions."
 
-        if mission.constraints.water is ConstraintLevel.LOW and selected_system.name == "aeroponic":
+        if is_tight_constraint(mission.constraints.water) and selected_system.name == "aeroponic":
             return reason[:-1] + " while pairing well with the selected water-efficient system."
 
         return reason
@@ -234,16 +242,16 @@ class Explainer:
             "high": 2,
         }[risk_analysis.level.value]
 
-        low_constraints = sum(
+        tight_constraints = sum(
             1
             for constraint in (
                 mission.constraints.water,
                 mission.constraints.energy,
                 mission.constraints.area,
             )
-            if constraint is ConstraintLevel.LOW
+            if is_tight_constraint(constraint)
         )
-        if low_constraints >= 2:
+        if tight_constraints >= 2:
             score += 1
 
         if self._has_system_pairing_penalty(mission, selected_system):
@@ -382,7 +390,7 @@ class Explainer:
             boosts["High calorie density"] = max(boosts.get("High calorie density", 0.0), 0.08)
             boosts["Useful oxygen contribution"] = max(boosts.get("Useful oxygen contribution", 0.0), 0.04)
 
-        if mission.constraints.water is ConstraintLevel.LOW:
+        if is_tight_constraint(mission.constraints.water):
             boosts["Water efficient under constrained operations"] = max(
                 boosts.get("Water efficient under constrained operations", 0.0),
                 0.10,
@@ -391,11 +399,11 @@ class Explainer:
         return boosts
 
     def _dominant_driver(self, mission: MissionProfile) -> str:
-        if mission.constraints.water is ConstraintLevel.LOW:
+        if is_tight_constraint(mission.constraints.water):
             return "water scarcity"
-        if mission.constraints.energy is ConstraintLevel.LOW:
+        if is_tight_constraint(mission.constraints.energy):
             return "energy pressure"
-        if mission.constraints.area is ConstraintLevel.LOW:
+        if is_tight_constraint(mission.constraints.area):
             return "tight area limits"
         if mission.goal is Goal.CALORIE_MAX:
             return "calorie continuity"

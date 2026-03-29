@@ -5,7 +5,7 @@ from __future__ import annotations
 from app.core.normalization import build_metric_ranges, normalize_record
 from app.engine.types import DomainEvaluation
 from app.models.algae import AlgaeSystem
-from app.models.mission import ConstraintLevel, Environment, Goal, MissionProfile
+from app.models.mission import Environment, Goal, MissionProfile, is_moderate_or_tight_constraint, is_tight_constraint
 
 
 ALGAE_METRICS = (
@@ -96,10 +96,14 @@ class AlgaeEngine:
         }[mission.goal]
 
         constraint_fit = 0.65
-        if mission.constraints.energy is ConstraintLevel.LOW:
+        if is_tight_constraint(mission.constraints.energy):
             constraint_fit = 1 - normalized["energy_light_dependency"]
-        elif mission.constraints.water is ConstraintLevel.LOW:
+        elif is_tight_constraint(mission.constraints.water):
             constraint_fit = normalized["water_system_compatibility"]
+        elif is_moderate_or_tight_constraint(mission.constraints.energy):
+            constraint_fit = 0.5 + (0.5 * (1 - normalized["energy_light_dependency"]))
+        elif is_moderate_or_tight_constraint(mission.constraints.water):
+            constraint_fit = 0.5 + (0.5 * normalized["water_system_compatibility"])
 
         environment_bias = {
             Environment.MARS: (0.35 * normalized["oxygen_contribution"]) + (0.35 * normalized["protein_potential"]) + (0.30 * normalized["co2_utilization"]),

@@ -9,7 +9,7 @@ from app.core.filters import compute_rule_adjustment, filter_compatible_crops
 from app.core.normalization import build_metric_ranges, normalize_record, normalize_scores
 from app.core.weights import derive_crop_weights, derive_system_weights
 from app.models.crop import Crop
-from app.models.mission import ConstraintLevel, Environment, Goal, MissionProfile
+from app.models.mission import Environment, Goal, MissionProfile, is_tight_constraint
 from app.models.system import GrowingSystem
 
 
@@ -70,11 +70,11 @@ def score_systems(systems: list[GrowingSystem], mission: MissionProfile) -> list
             raw_score += 0.05
             modifiers.append("balanced-profile-bonus")
 
-        if mission.constraints.water is ConstraintLevel.LOW and system.name == "aeroponic":
+        if is_tight_constraint(mission.constraints.water) and system.name == "aeroponic":
             raw_score += 0.08
             modifiers.append("water-priority-bonus")
 
-        if mission.constraints.energy is ConstraintLevel.LOW and system.name == "hydroponic":
+        if is_tight_constraint(mission.constraints.energy) and system.name == "hydroponic":
             raw_score += 0.05
             modifiers.append("energy-savings-bonus")
 
@@ -90,7 +90,7 @@ def score_systems(systems: list[GrowingSystem], mission: MissionProfile) -> list
             modifiers.append("mars-complexity-penalty")
 
         if mission.environment is Environment.MOON and system.name == "aeroponic":
-            bonus = 0.09 if mission.constraints.energy is not ConstraintLevel.LOW else 0.04
+            bonus = 0.09 if not is_tight_constraint(mission.constraints.energy) else 0.04
             raw_score += bonus
             modifiers.append("moon-water-bonus")
         elif mission.environment is Environment.MOON and system.name == "hydroponic":

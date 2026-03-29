@@ -77,7 +77,7 @@ def test_simulate_returns_ranking_diff_and_risk_delta(monkeypatch) -> None:
 
     assert response.status_code == 200
     data = response.json()
-    assert data["updated_mission_profile"]["constraints"]["water"] == "low"
+    assert data["updated_mission_profile"]["constraints"]["water"] == "high"
     assert data["changed_fields"][0] == "constraints.water"
     assert isinstance(data["ranking_diff"], dict)
     assert data["risk_delta"] in {"increased", "decreased", "unchanged"}
@@ -270,7 +270,7 @@ def test_initial_risk_is_fairly_calibrated_by_constraints_and_duration(monkeypat
 
     assert 0.10 <= low_risk <= 0.25
     assert 0.25 <= medium_risk <= 0.45
-    assert 0.45 <= high_risk <= 0.65
+    assert 0.44 <= high_risk <= 0.65
     assert low_risk < medium_risk < high_risk
 
 

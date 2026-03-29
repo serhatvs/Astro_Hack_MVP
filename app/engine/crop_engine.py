@@ -7,7 +7,13 @@ from collections.abc import Mapping
 from app.core.filters import filter_compatible_crops
 from app.core.normalization import build_metric_ranges, normalize_record
 from app.models.crop import Crop
-from app.models.mission import ConstraintLevel, Environment, Goal, MissionProfile
+from app.models.mission import (
+    Environment,
+    Goal,
+    MissionProfile,
+    is_moderate_or_tight_constraint,
+    is_tight_constraint,
+)
 from app.models.system import GrowingSystem
 from app.engine.types import DomainEvaluation
 
@@ -125,17 +131,26 @@ class CropEngine:
             Goal.LOW_MAINTENANCE: (0.60 * (1 - normalized["maintenance"])) + (0.40 * normalized["crew_acceptance"]),
         }[mission.goal]
 
-        constraint_fit = 0.0
-        if mission.constraints.water is ConstraintLevel.LOW:
-            constraint_fit += 1 - normalized["water_need"]
-        if mission.constraints.energy is ConstraintLevel.LOW:
-            constraint_fit += 1 - normalized["energy_need"]
-        if mission.constraints.area is ConstraintLevel.LOW:
-            constraint_fit += 1 - normalized["area_need"]
-        if constraint_fit == 0.0:
+        constraint_components: list[float] = []
+        if is_tight_constraint(mission.constraints.water):
+            constraint_components.append(1 - normalized["water_need"])
+        elif is_moderate_or_tight_constraint(mission.constraints.water):
+            constraint_components.append(0.5 + (0.5 * (1 - normalized["water_need"])))
+
+        if is_tight_constraint(mission.constraints.energy):
+            constraint_components.append(1 - normalized["energy_need"])
+        elif is_moderate_or_tight_constraint(mission.constraints.energy):
+            constraint_components.append(0.5 + (0.5 * (1 - normalized["energy_need"])))
+
+        if is_tight_constraint(mission.constraints.area):
+            constraint_components.append(1 - normalized["area_need"])
+        elif is_moderate_or_tight_constraint(mission.constraints.area):
+            constraint_components.append(0.5 + (0.5 * (1 - normalized["area_need"])))
+
+        if not constraint_components:
             constraint_fit = 0.65
         else:
-            constraint_fit /= 3
+            constraint_fit = sum(constraint_components) / len(constraint_components)
 
         environment_bias = {
             Environment.MARS: (0.45 * normalized["calorie_yield"]) + (0.35 * normalized["closed_loop_score"]) + (0.20 * (1 - normalized["risk"])),

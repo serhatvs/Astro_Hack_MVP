@@ -10,7 +10,7 @@ from app.engine.crop_engine import CropEngine
 from app.engine.interaction_engine import InteractionEngine
 from app.engine.microbial_engine import MicrobialEngine
 from app.engine.types import DomainEvaluation, DomainRankingSet, IntegratedResult, IntegratedSelection
-from app.models.mission import Environment, MissionProfile
+from app.models.mission import ConstraintLevel, Duration, Environment, Goal, MissionProfile
 from app.models.system import GrowingSystem
 from app.services.data_provider import DataProvider
 
@@ -208,6 +208,7 @@ class IntegrationEngine:
             - (risk_bias * total_risk)
             + (0.20 * ranked_system_score)
             + self._environment_system_bonus(mission.environment, grow_system.name)
+            + self._mission_crop_bonus(crop_eval, mission)
         )
         return IntegratedResult(
             crop=crop_eval,
@@ -269,3 +270,41 @@ class IntegrationEngine:
             if system_name == "aeroponic":
                 return -0.06
         return 0.0
+
+    def _mission_crop_bonus(self, crop_eval: DomainEvaluation, mission: MissionProfile) -> float:
+        crop = crop_eval.candidate
+        bonus = 0.0
+
+        if (
+            mission.goal is Goal.CALORIE_MAX
+            and crop.calorie_yield >= 85
+            and crop_eval.risk_score <= 0.72
+        ):
+            bonus += 0.09
+
+        if (
+            mission.environment is Environment.MARS
+            and mission.duration is Duration.LONG
+            and mission.constraints.water is ConstraintLevel.LOW
+            and mission.constraints.energy is ConstraintLevel.LOW
+            and mission.constraints.area is ConstraintLevel.LOW
+            and crop.calorie_yield >= 85
+            and crop_eval.risk_score <= 0.72
+        ):
+            bonus += 0.05
+
+        if (
+            (mission.goal is Goal.WATER_EFFICIENCY or mission.environment is Environment.MOON)
+            and crop.water_need <= 45
+            and crop.area_need <= 45
+        ):
+            bonus += 0.05
+
+        if (
+            (mission.goal is Goal.LOW_MAINTENANCE or mission.environment is Environment.ISS)
+            and crop.maintenance <= 40
+            and crop.risk <= 35
+        ):
+            bonus += 0.05
+
+        return round(bonus, 3)

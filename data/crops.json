@@ -2,12 +2,12 @@
   {
     "name": "Triticum aestivum (Cuce Bugday)",
     "calorie_yield": 92,
-    "water_need": 82,
-    "energy_need": 95,
-    "growth_time": 82,
-    "risk": 68,
-    "maintenance": 68,
-    "area_need": 95,
+    "water_need": 76,
+    "energy_need": 88,
+    "growth_time": 74,
+    "risk": 58,
+    "maintenance": 60,
+    "area_need": 86,
     "nutrient_density": 85,
     "oxygen_contribution": 90,
     "co2_utilization": 95,
@@ -24,7 +24,7 @@
       "Genis Alanli CEA",
       "Yuksek CO2 Ortamlari"
     ],
-    "notes": "Kalori ve O2 katkisi cok yuksektir ancak hala alan, su ve enerji tuketimi belirgin seviyededir. Uzun sureli kalori odakli gorevlerde anlamlidir, fakat bakim ve risk maliyeti nedeniyle her profilde varsayilan secim olmamalidir."
+    "notes": "Kalori ve O2 katkisi cok yuksektir ancak hala alan, su ve enerji tuketimi hissedilir seviyededir. Uzun sureli kalori odakli gorevlerde artik daha gercekci bir lider adaydir, fakat bakim ve risk maliyeti nedeniyle her profilde varsayilan secim olmamalidir."
   },
   {
     "name": "Lactuca sativa (Marul)",
@@ -56,21 +56,20 @@
   },
   {
     "name": "Solanum lycopersicum (Dwarf Domates)",
-    "calorie_yield": 68,
-    "water_need": 58,
-    "energy_need": 55,
+    "calorie_yield": 62,
+    "water_need": 62,
+    "energy_need": 58,
     "growth_time": 58,
-    "risk": 38,
-    "maintenance": 54,
-    "area_need": 52,
-    "nutrient_density": 94,
-    "oxygen_contribution": 60,
-    "co2_utilization": 60,
-    "waste_recycling_synergy": 78,
-    "crew_acceptance": 96,
+    "risk": 44,
+    "maintenance": 58,
+    "area_need": 58,
+    "nutrient_density": 88,
+    "oxygen_contribution": 56,
+    "co2_utilization": 58,
+    "waste_recycling_synergy": 72,
+    "crew_acceptance": 92,
     "mission_environments": [
-      "mars",
-      "moon"
+      "mars"
     ],
     "compatible_systems": [
       "Advanced Plant Habitat (APH)",
@@ -80,21 +79,21 @@
       "Orta Isikli CEA",
       "Duzenli Sicaklik Kontrollu Moduller"
     ],
-    "notes": "Denge odakli gorevler icin orta-siklet yerine artik daha gercekci bir ana adaydir. Hala bakim ister fakat kalori, besin ve dongu katkisi ile uzun sureli Mars ve Moon senaryolarinda marulun onune gecebilir."
+    "notes": "Denge odakli gorevler icin guclu bir ana adaydir ama artik evrensel cevap degildir. Hala bakim ister; kalori, besin ve dongu katkisi ile ozellikle Mars senaryolarinda one cikarken Moon ve dusuk-bakim profillerinde alternatifler daha anlamli olabilir."
   },
   {
     "name": "Cucumis sativus (Salatalik)",
     "calorie_yield": 38,
-    "water_need": 88,
-    "energy_need": 70,
+    "water_need": 74,
+    "energy_need": 66,
     "growth_time": 50,
-    "risk": 62,
-    "maintenance": 54,
-    "area_need": 72,
+    "risk": 50,
+    "maintenance": 48,
+    "area_need": 60,
     "nutrient_density": 40,
     "oxygen_contribution": 82,
     "co2_utilization": 86,
-    "waste_recycling_synergy": 30,
+    "waste_recycling_synergy": 42,
     "crew_acceptance": 85,
     "mission_environments": [
       "moon"
@@ -107,17 +106,17 @@
       "Yuksek Nemli Atmosfer",
       "Bol Su Akisli Ortamlar"
     ],
-    "notes": "Biyokutlesi ve atmosfer katkisi yuksektir ancak su talebi hala belirgindir. Bu nedenle yalnizca belirli Moon benzeri profillerde sansi olan, ama genis kullanimli olmayan bir uzmandir."
+    "notes": "Biyokutlesi ve atmosfer katkisi yuksektir ancak su talebi tamamen kaybolmus degildir. Moon benzeri profillerde artik daha ciddi bir alternatif olabilir, ama yine de genis kullanimli varsayilan secim degildir."
   },
   {
     "name": "Glycine max (Soya Fasulyesi)",
     "calorie_yield": 100,
-    "water_need": 95,
-    "energy_need": 90,
+    "water_need": 88,
+    "energy_need": 84,
     "growth_time": 78,
-    "risk": 78,
-    "maintenance": 74,
-    "area_need": 95,
+    "risk": 68,
+    "maintenance": 68,
+    "area_need": 88,
     "nutrient_density": 100,
     "oxygen_contribution": 85,
     "co2_utilization": 90,
@@ -133,6 +132,6 @@
     "preferred_environments": [
       "Yuksek Isikli Genis Alanlar"
     ],
-    "notes": "Bitkisel protein ve kalori sampiyonudur ancak su ve alan maliyeti hala cok yuksektir. Bu iyilestirilmis profil onu nadir ama anlamli bir Mars yuksek-kalori alternatifi yapar; genel amacli secim haline getirmez."
+    "notes": "Bitkisel protein ve kalori sampiyonudur ancak su ve alan maliyeti hala yuksektir. Iyilestirilmis profil onu daha anlamli bir Mars yuksek-kalori alternatifi yapar; yine de genel amacli secim haline getirmez."
   }
 ]

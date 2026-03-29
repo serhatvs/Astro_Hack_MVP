@@ -61,11 +61,29 @@ class MissionProfile(BaseModel):
     goal: Goal
 
 
-def downgrade_constraint(level: ConstraintLevel) -> ConstraintLevel:
-    """Decrease a constraint by one step while clamping at low."""
+def tighten_constraint(level: ConstraintLevel) -> ConstraintLevel:
+    """Increase constraint severity by one step while clamping at high."""
 
-    if level is ConstraintLevel.HIGH:
+    if level is ConstraintLevel.LOW:
         return ConstraintLevel.MEDIUM
     if level is ConstraintLevel.MEDIUM:
-        return ConstraintLevel.LOW
-    return ConstraintLevel.LOW
+        return ConstraintLevel.HIGH
+    return ConstraintLevel.HIGH
+
+
+def downgrade_constraint(level: ConstraintLevel) -> ConstraintLevel:
+    """Backward-compatible alias for tightening mission constraints after a resource drop."""
+
+    return tighten_constraint(level)
+
+
+def is_tight_constraint(level: ConstraintLevel) -> bool:
+    """Return whether the constraint represents a truly resource-tight mission condition."""
+
+    return level is ConstraintLevel.HIGH
+
+
+def is_moderate_or_tight_constraint(level: ConstraintLevel) -> bool:
+    """Return whether the constraint is meaningful enough to influence scoring."""
+
+    return level in {ConstraintLevel.MEDIUM, ConstraintLevel.HIGH}

@@ -13,6 +13,7 @@ from app.api.errors import (
     SIMULATION_ALREADY_ENDED_MESSAGE,
     SIMULATION_NOT_INITIALIZED_MESSAGE,
 )
+from app.core.normalization import build_metric_ranges, normalize_record
 from app.core.mission_state import (
     ActiveDomainItem,
     ActiveSystemState,
@@ -25,7 +26,7 @@ from app.core.mission_state import (
     constraint_to_resource_margin,
 )
 from app.core.risk import evaluate_risk
-from app.core.scoring import score_crops
+from app.core.scoring import ScoredCrop
 from app.core.simulation import (
     MissionEvents,
     MissionStepRequest,
@@ -75,6 +76,16 @@ from app.services.resource_planner import ResourcePlanner
 
 RISK_DECAY = 0.025
 RISK_COLLAPSE_THRESHOLD = 0.85
+CROP_DETAIL_METRICS = (
+    "calorie_yield",
+    "water_need",
+    "energy_need",
+    "growth_time",
+    "risk",
+    "maintenance",
+    "closed_loop_score",
+    "crew_support_score",
+)
 
 
 class RecommendationEngine:
@@ -558,12 +569,11 @@ class RecommendationEngine:
             for crop in self.provider.get_crops()
             if crop.name.lower() not in ALGAE_LIKE_NAMES
         ]
-        ranked_crops = score_crops(
-            crops=filtered_crops,
-            mission=mission,
-            selected_system=selected_grow_system,
-            temporary_penalties=temporary_penalties,
-            weight_adjustments=weight_adjustments,
+        ranked_crops = self._build_ranked_crop_context(
+            filtered_crops=filtered_crops,
+            ranked_candidates=ranked_candidates.crop,
+            selected_grow_system_name=selected_grow_system.name,
+            selected_crop_name=integrated_result.crop.candidate.name,
         )
         analysis_ranked_crops = ranked_crops[:3]
         top_ranked_crops = ranked_crops[:5]
@@ -673,6 +683,44 @@ class RecommendationEngine:
             operational_note=operational_note,
             explanation=explanation,
         )
+
+    def _build_ranked_crop_context(
+        self,
+        *,
+        filtered_crops,
+        ranked_candidates,
+        selected_grow_system_name: str,
+        selected_crop_name: str,
+    ) -> list[ScoredCrop]:
+        ranges = build_metric_ranges(filtered_crops, CROP_DETAIL_METRICS)
+        crop_lookup = {crop.name: crop for crop in filtered_crops}
+        ranked_context: list[ScoredCrop] = []
+
+        for evaluation in ranked_candidates:
+            crop = crop_lookup.get(evaluation.candidate.name)
+            if crop is None:
+                continue
+
+            ranked_context.append(
+                ScoredCrop(
+                    crop=crop,
+                    system_name=selected_grow_system_name,
+                    raw_score=evaluation.combined_score,
+                    normalized_metrics=normalize_record(crop, ranges),
+                    rule_notes=list(evaluation.notes),
+                    score=evaluation.combined_score,
+                )
+            )
+
+        selected_index = next(
+            (index for index, item in enumerate(ranked_context) if item.crop.name == selected_crop_name),
+            None,
+        )
+        if selected_index not in {None, 0}:
+            selected_item = ranked_context.pop(selected_index)
+            ranked_context.insert(0, selected_item)
+
+        return ranked_context
 
     def _build_selected_crop_compatibility(
         self,

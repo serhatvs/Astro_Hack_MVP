@@ -3,16 +3,16 @@
 from __future__ import annotations
 
 from app.core.scoring import ScoredCrop
-from app.models.mission import ConstraintLevel, Duration, Environment, MissionProfile
+from app.models.mission import Duration, Environment, MissionProfile, is_tight_constraint
 from app.models.response import RiskAnalysis, RiskLevel
 from app.models.system import GrowingSystem
 
 
 def _has_tight_resources(mission: MissionProfile) -> bool:
     return (
-        mission.constraints.water is ConstraintLevel.LOW
-        or mission.constraints.energy is ConstraintLevel.LOW
-        or mission.constraints.area is ConstraintLevel.LOW
+        is_tight_constraint(mission.constraints.water)
+        or is_tight_constraint(mission.constraints.energy)
+        or is_tight_constraint(mission.constraints.area)
     )
 
 
@@ -27,7 +27,7 @@ def evaluate_risk(
     points = 0.0
     lead_crop = ranked_crops[0].crop if ranked_crops else None
 
-    if mission.constraints.water is ConstraintLevel.LOW and selected_system.complexity >= 70:
+    if is_tight_constraint(mission.constraints.water) and selected_system.complexity >= 70:
         points += 1.0
         factors.append("water scarcity paired with system complexity")
 
@@ -43,7 +43,7 @@ def evaluate_risk(
         points += 1.0
         factors.append("high-maintenance crops under constrained resources")
 
-    if mission.constraints.area is ConstraintLevel.LOW and any(
+    if is_tight_constraint(mission.constraints.area) and any(
         item.crop.area_need >= 55 for item in ranked_crops
     ):
         points += 1.0

@@ -5,7 +5,7 @@ from __future__ import annotations
 from app.core.normalization import build_metric_ranges, normalize_record
 from app.engine.types import DomainEvaluation
 from app.models.microbial import MicrobialSystem
-from app.models.mission import ConstraintLevel, Environment, Goal, MissionProfile
+from app.models.mission import Environment, Goal, MissionProfile, is_moderate_or_tight_constraint, is_tight_constraint
 
 
 MICROBIAL_METRICS = (
@@ -92,10 +92,14 @@ class MicrobialEngine:
         }[mission.goal]
 
         constraint_fit = 0.65
-        if mission.constraints.area is ConstraintLevel.LOW:
+        if is_tight_constraint(mission.constraints.area):
             constraint_fit = 1 - normalized["reactor_dependency"]
-        elif mission.constraints.energy is ConstraintLevel.LOW:
+        elif is_tight_constraint(mission.constraints.energy):
             constraint_fit = 1 - normalized["maintenance_burden"]
+        elif is_moderate_or_tight_constraint(mission.constraints.area):
+            constraint_fit = 0.5 + (0.5 * (1 - normalized["reactor_dependency"]))
+        elif is_moderate_or_tight_constraint(mission.constraints.energy):
+            constraint_fit = 0.5 + (0.5 * (1 - normalized["maintenance_burden"]))
 
         environment_bias = {
             Environment.MARS: (0.45 * normalized["loop_closure_contribution"]) + (0.35 * normalized["nutrient_conversion_capability"]) + (0.20 * (1 - normalized["contamination_risk"])),

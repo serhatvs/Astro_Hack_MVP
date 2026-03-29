@@ -4,7 +4,15 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from app.models.mission import ConstraintLevel, Duration, Environment, Goal, MissionProfile
+from app.models.mission import (
+    ConstraintLevel,
+    Duration,
+    Environment,
+    Goal,
+    MissionProfile,
+    is_moderate_or_tight_constraint,
+    is_tight_constraint,
+)
 
 
 BASE_CROP_WEIGHTS = {
@@ -58,12 +66,21 @@ def derive_crop_weights(
     elif mission.duration is Duration.SHORT:
         weights["growth_time"] += 0.08 if mission.goal is Goal.CALORIE_MAX else 0.20
 
-    if mission.constraints.water is ConstraintLevel.LOW:
+    if is_tight_constraint(mission.constraints.water):
         weights["water"] += 0.15
         weights["closed_loop"] += 0.03
+    elif is_moderate_or_tight_constraint(mission.constraints.water):
+        weights["water"] += 0.08
 
-    if mission.constraints.energy is ConstraintLevel.LOW:
+    if is_tight_constraint(mission.constraints.energy):
         weights["energy"] += 0.10
+    elif is_moderate_or_tight_constraint(mission.constraints.energy):
+        weights["energy"] += 0.05
+
+    if is_tight_constraint(mission.constraints.area):
+        weights["maintenance"] += 0.05
+    elif is_moderate_or_tight_constraint(mission.constraints.area):
+        weights["maintenance"] += 0.02
 
     if mission.environment is Environment.MARS:
         weights["calorie"] += 0.12
@@ -91,14 +108,20 @@ def derive_system_weights(mission: MissionProfile) -> dict[str, float]:
 
     weights = dict(BASE_SYSTEM_WEIGHTS)
 
-    if mission.constraints.water is ConstraintLevel.LOW:
+    if is_tight_constraint(mission.constraints.water):
         weights["water_efficiency"] += 0.22
+    elif is_moderate_or_tight_constraint(mission.constraints.water):
+        weights["water_efficiency"] += 0.10
 
-    if mission.constraints.energy is ConstraintLevel.LOW:
+    if is_tight_constraint(mission.constraints.energy):
         weights["energy_cost"] += 0.18
+    elif is_moderate_or_tight_constraint(mission.constraints.energy):
+        weights["energy_cost"] += 0.08
 
-    if mission.constraints.area is ConstraintLevel.LOW:
+    if is_tight_constraint(mission.constraints.area):
         weights["complexity"] += 0.04
+    elif is_moderate_or_tight_constraint(mission.constraints.area):
+        weights["complexity"] += 0.02
 
     if mission.goal is Goal.WATER_EFFICIENCY:
         weights["water_efficiency"] += 0.12

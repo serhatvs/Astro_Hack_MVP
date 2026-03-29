@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from app.models.crop import Crop
-from app.models.mission import ConstraintLevel, Duration, MissionProfile
+from app.models.mission import Duration, MissionProfile, is_tight_constraint
 from app.models.system import GrowingSystem
 
 
@@ -18,9 +18,9 @@ def mission_has_constrained_resources(mission: MissionProfile) -> bool:
 
     constraints = mission.constraints
     return (
-        constraints.water is ConstraintLevel.LOW
-        or constraints.energy is ConstraintLevel.LOW
-        or constraints.area is ConstraintLevel.LOW
+        is_tight_constraint(constraints.water)
+        or is_tight_constraint(constraints.energy)
+        or is_tight_constraint(constraints.area)
     )
 
 
@@ -42,11 +42,11 @@ def compute_rule_adjustment(crop: Crop, mission: MissionProfile) -> tuple[float,
         adjustment -= 0.08
         notes.append("maintenance-penalty")
 
-    if mission.constraints.area is ConstraintLevel.LOW and crop.area_need >= 55:
+    if is_tight_constraint(mission.constraints.area) and crop.area_need >= 55:
         adjustment -= 0.10
         notes.append("area-penalty")
 
-    if mission.constraints.water is ConstraintLevel.LOW and crop.water_need <= 35:
+    if is_tight_constraint(mission.constraints.water) and crop.water_need <= 35:
         adjustment += 0.04
         notes.append("water-efficiency-bonus")
 
