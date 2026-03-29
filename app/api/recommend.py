@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from app.api.protection import protect_recommend
 from app.models.mission import MissionProfile
 from app.models.response import RecommendationResponse
 from app.services.recommender import get_default_engine
@@ -12,7 +13,11 @@ from app.services.recommender import get_default_engine
 router = APIRouter(tags=["recommend"])
 
 
-@router.post("/recommend", response_model=RecommendationResponse)
+@router.post(
+    "/recommend",
+    response_model=RecommendationResponse,
+    dependencies=[Depends(protect_recommend)],
+)
 def recommend(payload: MissionProfile) -> RecommendationResponse:
     """Generate mission planning recommendations."""
 

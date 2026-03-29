@@ -14,10 +14,31 @@ const BASE_URL =
   import.meta.env.VITE_API_BASE_URL?.trim() ||
   "http://localhost:8000";
 
+const SESSION_STORAGE_KEY = "astro-hack-session-id";
+
+function getSessionId(): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const existing = window.sessionStorage.getItem(SESSION_STORAGE_KEY)?.trim();
+  if (existing) {
+    return existing;
+  }
+
+  const generated =
+    window.crypto?.randomUUID?.() ||
+    `astro-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  window.sessionStorage.setItem(SESSION_STORAGE_KEY, generated);
+  return generated;
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const sessionId = getSessionId();
   const response = await fetch(`${BASE_URL}${path}`, {
     headers: {
       "Content-Type": "application/json",
+      ...(sessionId ? { "X-Session-ID": sessionId } : {}),
       ...(options?.headers || {}),
     },
     ...options,

@@ -327,6 +327,12 @@ class ReasoningLoop:
             f"for the {mission.environment.value} mission because that stack best balances domain fit, "
             "interaction synergy, and closed-loop stability."
         )
+        if source == "recommend":
+            reasoning_summary = (
+                "System analysis generated using deterministic model. "
+                "AI explanation unavailable. Displaying baseline reasoning. "
+                f"{reasoning_summary}"
+            )
         if source == "simulate":
             reasoning_summary = self._build_simulation_summary(
                 base_summary=reasoning_summary,

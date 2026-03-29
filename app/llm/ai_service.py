@@ -6,6 +6,8 @@ import json
 import logging
 import os
 from collections.abc import Mapping
+from hashlib import sha256
+from threading import Lock
 from typing import Any
 
 from app.models.response import (
@@ -14,6 +16,7 @@ from app.models.response import (
 )
 
 from .gemini_client import GeminiClient
+from .safe_ai import safe_ai_call
 
 
 logger = logging.getLogger(__name__)
@@ -26,6 +29,10 @@ class AIService:
         self.gemini_client = gemini_client or GeminiClient()
         self.summary_model = os.getenv("GEMINI_MODEL_SUMMARY_POLISH", "gemini-2.5-flash-lite")
         self.explanation_model = os.getenv("GEMINI_MODEL_EXPLANATION", "gemini-2.5-flash")
+        self.timeout_seconds = self._read_timeout_seconds()
+        self._cache_lock = Lock()
+        self._recommendation_cache: dict[str, GeminiNarrative] = {}
+        self._summary_cache: dict[str, UIEnhancedNarrative] = {}
 
     def generate_recommendation_explanation(
         self,
@@ -36,16 +43,36 @@ class AIService:
     ) -> GeminiNarrative:
         """Generate the standard recommendation narrative with optional cheap UI polish."""
 
-        narrative = self.gemini_client.analyze(
-            dict(payload),
-            model=self.explanation_model,
-            use_llm=use_ai,
-            fallback_ui=fallback.ui_layer.model_dump(mode="json"),
-            default_reasoning=fallback.debug_layer.reasoning_summary,
+        cache_key = self._cache_key(
+            "recommendation_explanation",
+            {
+                "model": self.explanation_model,
+                "use_ai": use_ai,
+                "payload": dict(payload),
+            },
         )
-        if narrative is None:
+        cached_narrative = self._get_recommendation_cache(cache_key)
+        if cached_narrative is not None:
+            logger.info("AI cache hit for recommendation explanation.")
+            return cached_narrative
+
+        narrative = safe_ai_call(
+            lambda: self.gemini_client.analyze(
+                dict(payload),
+                model=self.explanation_model,
+                use_llm=use_ai,
+                fallback_ui=fallback.ui_layer.model_dump(mode="json"),
+                default_reasoning=fallback.debug_layer.reasoning_summary,
+            ),
+            fallback=fallback.model_copy(deep=True),
+            task_label="recommendation_explanation",
+            timeout_seconds=self.timeout_seconds,
+            logger=logger,
+        )
+        if not narrative.debug_layer.reasoning_summary.endswith(" -gemini"):
             logger.info("AIService falling back to deterministic recommendation narrative.")
-            return fallback
+            self._set_recommendation_cache(cache_key, narrative)
+            return narrative
 
         polished_ui = self.generate_summary_polish(
             {
@@ -58,8 +85,8 @@ class AIService:
             fallback_ui=narrative.ui_layer,
             use_ai=use_ai,
         )
-        if polished_ui is not None:
-            narrative = narrative.model_copy(update={"ui_layer": polished_ui})
+        narrative = narrative.model_copy(update={"ui_layer": polished_ui})
+        self._set_recommendation_cache(cache_key, narrative)
         return narrative
 
     def generate_summary_polish(
@@ -68,7 +95,7 @@ class AIService:
         *,
         fallback_ui: UIEnhancedNarrative,
         use_ai: bool = True,
-    ) -> UIEnhancedNarrative | None:
+    ) -> UIEnhancedNarrative:
         """Use the lightest model to polish short UI-facing text."""
 
         schema = {
@@ -86,6 +113,35 @@ class AIService:
             f"Expected JSON schema:\n{json.dumps(schema, ensure_ascii=True, indent=2)}\n\n"
             f"Payload:\n{json.dumps(dict(payload), ensure_ascii=True, indent=2)}"
         )
+        cache_key = self._cache_key(
+            "summary_polish",
+            {
+                "model": self.summary_model,
+                "use_ai": use_ai,
+                "payload": dict(payload),
+            },
+        )
+        cached_summary = self._get_summary_cache(cache_key)
+        if cached_summary is not None:
+            logger.info("AI cache hit for summary polish.")
+            return cached_summary
+
+        polished_ui = safe_ai_call(
+            lambda: self._generate_summary_ui(prompt, fallback_ui, use_ai),
+            fallback=fallback_ui.model_copy(deep=True),
+            task_label="summary_polish",
+            timeout_seconds=self.timeout_seconds,
+            logger=logger,
+        )
+        self._set_summary_cache(cache_key, polished_ui)
+        return polished_ui
+
+    def _generate_summary_ui(
+        self,
+        prompt: str,
+        fallback_ui: UIEnhancedNarrative,
+        use_ai: bool,
+    ) -> UIEnhancedNarrative | None:
         parsed = self.gemini_client.generate_json(
             prompt,
             model=self.summary_model,
@@ -95,3 +151,33 @@ class AIService:
         if parsed is None:
             return None
         return UIEnhancedNarrative.from_payload(parsed, defaults=fallback_ui.model_dump(mode="json"))
+
+    def _cache_key(self, namespace: str, payload: Mapping[str, Any]) -> str:
+        serialized = json.dumps(dict(payload), ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+        return f"{namespace}:{sha256(serialized.encode('utf-8')).hexdigest()}"
+
+    def _get_recommendation_cache(self, cache_key: str) -> GeminiNarrative | None:
+        with self._cache_lock:
+            cached = self._recommendation_cache.get(cache_key)
+            return cached.model_copy(deep=True) if cached is not None else None
+
+    def _set_recommendation_cache(self, cache_key: str, narrative: GeminiNarrative) -> None:
+        with self._cache_lock:
+            self._recommendation_cache[cache_key] = narrative.model_copy(deep=True)
+
+    def _get_summary_cache(self, cache_key: str) -> UIEnhancedNarrative | None:
+        with self._cache_lock:
+            cached = self._summary_cache.get(cache_key)
+            return cached.model_copy(deep=True) if cached is not None else None
+
+    def _set_summary_cache(self, cache_key: str, narrative: UIEnhancedNarrative) -> None:
+        with self._cache_lock:
+            self._summary_cache[cache_key] = narrative.model_copy(deep=True)
+
+    def _read_timeout_seconds(self) -> float:
+        raw_value = os.getenv("AI_CALL_TIMEOUT_SECONDS", "8")
+        try:
+            return max(1.0, float(raw_value))
+        except ValueError:
+            logger.warning("Invalid AI_CALL_TIMEOUT_SECONDS=%s; using 8 seconds.", raw_value)
+            return 8.0
