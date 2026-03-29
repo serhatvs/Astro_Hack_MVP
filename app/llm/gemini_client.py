@@ -43,6 +43,7 @@ class GeminiClient:
             model=model,
             use_llm=use_llm,
             task_label="recommendation_narrative",
+            response_schema=self._narrative_response_schema(),
         )
         if parsed is None:
             return None
@@ -72,6 +73,7 @@ class GeminiClient:
         model: str | None = None,
         use_llm: bool = True,
         task_label: str = "generic_task",
+        response_schema: dict[str, Any] | None = None,
     ) -> dict[str, Any] | None:
         if not use_llm:
             logger.info("Gemini blocked by use_llm=False; skipping external AI call for %s.", task_label)
@@ -92,15 +94,38 @@ class GeminiClient:
         try:
             logger.info("Gemini enabled: sending %s request with model=%s.", task_label, resolved_model)
             client = genai.Client(api_key=self.api_key)
-            response = client.models.generate_content(
-                model=resolved_model,
-                contents=prompt,
-            )
-            text = getattr(response, "text", "") or ""
+            generation_config = self._build_generation_config(response_schema)
+            if generation_config is None:
+                response = client.models.generate_content(
+                    model=resolved_model,
+                    contents=prompt,
+                )
+            else:
+                try:
+                    response = client.models.generate_content(
+                        model=resolved_model,
+                        contents=prompt,
+                        config=generation_config,
+                    )
+                except TypeError:
+                    logger.info(
+                        "Gemini client for %s does not accept config=; retrying without structured config.",
+                        task_label,
+                    )
+                    response = client.models.generate_content(
+                        model=resolved_model,
+                        contents=prompt,
+                    )
         except Exception:
             logger.warning("Gemini request failed for %s; using deterministic fallback.", task_label, exc_info=True)
             return None
 
+        parsed_response = getattr(response, "parsed", None)
+        if isinstance(parsed_response, dict):
+            logger.info("Gemini %s succeeded with structured parsed output.", task_label)
+            return parsed_response
+
+        text = getattr(response, "text", "") or ""
         if not text.strip():
             logger.warning("Gemini returned an empty response for %s; using deterministic fallback.", task_label)
             return None
@@ -122,6 +147,90 @@ class GeminiClient:
 
         logger.info("Gemini %s succeeded with model=%s.", task_label, resolved_model)
         return parsed
+
+    def _build_generation_config(self, response_schema: dict[str, Any] | None) -> dict[str, Any] | None:
+        if response_schema is None:
+            return None
+        return {
+            "response_mime_type": "application/json",
+            "response_json_schema": response_schema,
+            "temperature": 0,
+        }
+
+    def _narrative_response_schema(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "ui_layer": {
+                    "type": "object",
+                    "properties": {
+                        "crop_note": {"type": "string"},
+                        "algae_note": {"type": "string"},
+                        "microbial_note": {"type": "string"},
+                        "executive_summary": {"type": "string"},
+                        "adaptation_summary": {"type": "string"},
+                    },
+                    "required": [
+                        "crop_note",
+                        "algae_note",
+                        "microbial_note",
+                        "executive_summary",
+                        "adaptation_summary",
+                    ],
+                },
+                "debug_layer": {
+                    "type": "object",
+                    "properties": {
+                        "reasoning_summary": {"type": "string"},
+                        "weaknesses": {"type": "array", "items": {"type": "string"}},
+                        "improvements": {"type": "array", "items": {"type": "string"}},
+                        "alternative": {
+                            "type": "object",
+                            "properties": {
+                                "crop": {"type": ["string", "null"]},
+                                "algae": {"type": ["string", "null"]},
+                                "microbial": {"type": ["string", "null"]},
+                                "grow_system": {"type": ["string", "null"]},
+                                "rationale": {"type": "string"},
+                            },
+                            "required": ["crop", "algae", "microbial", "grow_system", "rationale"],
+                        },
+                        "second_pass": {
+                            "type": "object",
+                            "properties": {
+                                "decision": {"type": "string"},
+                                "rationale": {"type": "string"},
+                                "selected_candidate_id": {"type": ["string", "null"]},
+                                "selected_configuration": {
+                                    "type": "object",
+                                    "properties": {
+                                        "crop": {"type": ["string", "null"]},
+                                        "algae": {"type": ["string", "null"]},
+                                        "microbial": {"type": ["string", "null"]},
+                                        "grow_system": {"type": ["string", "null"]},
+                                    },
+                                    "required": ["crop", "algae", "microbial", "grow_system"],
+                                },
+                            },
+                            "required": [
+                                "decision",
+                                "rationale",
+                                "selected_candidate_id",
+                                "selected_configuration",
+                            ],
+                        },
+                    },
+                    "required": [
+                        "reasoning_summary",
+                        "weaknesses",
+                        "improvements",
+                        "alternative",
+                        "second_pass",
+                    ],
+                },
+            },
+            "required": ["ui_layer", "debug_layer"],
+        }
 
     def _build_narrative_prompt(self, payload: dict[str, Any]) -> str:
         schema = {

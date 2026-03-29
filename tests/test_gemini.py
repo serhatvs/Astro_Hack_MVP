@@ -110,6 +110,63 @@ def test_gemini_client_parses_fenced_json(monkeypatch) -> None:
     assert narrative.debug_layer.alternative_configuration == narrative.debug_layer.alternative
 
 
+def test_gemini_client_uses_parsed_payload_when_available(monkeypatch) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+    class FakeResponse:
+        def __init__(self) -> None:
+            self.parsed = {
+                "ui_layer": {
+                    "crop_note": "Parsed crop note.",
+                    "algae_note": "Parsed algae note.",
+                    "microbial_note": "Parsed microbial note.",
+                    "executive_summary": "Parsed executive summary.",
+                    "adaptation_summary": "",
+                },
+                "debug_layer": {
+                    "reasoning_summary": "Parsed response ready.",
+                    "weaknesses": [],
+                    "improvements": [],
+                    "alternative": {
+                        "crop": "tomato",
+                        "algae": "chlorella_panel",
+                        "microbial": "biofilm_polisher",
+                        "grow_system": "hybrid",
+                        "rationale": "Parsed candidate.",
+                    },
+                    "second_pass": {
+                        "decision": "retain",
+                        "rationale": "Parsed candidate retained.",
+                        "selected_candidate_id": "candidate_1",
+                        "selected_configuration": {
+                            "crop": "tomato",
+                            "algae": "chlorella_panel",
+                            "microbial": "biofilm_polisher",
+                            "grow_system": "hybrid",
+                        },
+                    },
+                },
+            }
+            self.text = ""
+
+    class FakeClient:
+        def __init__(self, api_key: str) -> None:  # noqa: ARG002
+            self.models = self
+
+        def generate_content(self, model: str, contents: str, config=None):  # noqa: ARG002
+            return FakeResponse()
+
+    google_module = ModuleType("google")
+    google_module.genai = SimpleNamespace(Client=FakeClient)
+    monkeypatch.setitem(sys.modules, "google", google_module)
+
+    narrative = GeminiClient().analyze({"request_context": {"source": "recommend"}})
+
+    assert narrative is not None
+    assert narrative.ui_layer.executive_summary == "Parsed executive summary."
+    assert narrative.debug_layer.reasoning_summary == "Parsed response ready. -gemini"
+
+
 def test_gemini_client_returns_none_on_invalid_json(monkeypatch) -> None:
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
     _install_fake_google(monkeypatch, "```json\nnot-valid-json\n```")

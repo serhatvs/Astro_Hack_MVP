@@ -147,6 +147,23 @@ class AIService:
             model=self.summary_model,
             use_llm=use_ai,
             task_label="summary_polish",
+            response_schema={
+                "type": "object",
+                "properties": {
+                    "crop_note": {"type": "string"},
+                    "algae_note": {"type": "string"},
+                    "microbial_note": {"type": "string"},
+                    "executive_summary": {"type": "string"},
+                    "adaptation_summary": {"type": "string"},
+                },
+                "required": [
+                    "crop_note",
+                    "algae_note",
+                    "microbial_note",
+                    "executive_summary",
+                    "adaptation_summary",
+                ],
+            },
         )
         if parsed is None:
             return None
